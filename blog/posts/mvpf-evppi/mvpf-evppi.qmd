@@ -1,0 +1,486 @@
+---
+title: "Welfare Analysis Meets Research Prioritization"
+subtitle: "Part Two: Using the MVPF to Inform the Direction of Future Research"
+author: John Graves
+date: "2023-03-24"
+categories: [CEA, MVPF]
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: false
+  message: false
+  warning: false  
+bibliography: "../../../references.bib"
+reference-location: margin
+self-contained: true
+image: "media/noun-prioritize-3555436.png"
+---
+
+```{r setup}
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(tidyverse)
+library(glue)
+library(mgcv)
+library(knitr)
+library(kableExtra)
+library(ggthemes)
+library(ggsci)
+library(directlabels)
+library(extrafont)
+library(gganimate)
+#extrafont::font_import()
+```
+
+**Part two** in a three-part series on how the tools of comparative welfare analysis can be used to refine and design prospective randomized evaluations.
+
+# Introduction
+
+[The first post in this series](../mvpf-evpi/mvpf-evpi.qmd) drew an explicit linkage between summary measures of comparative welfare analysis (the marginal value of public funds, or MVPF) with value of information (VOI) concepts from decision theory. This linkage allowed us to explore the range of current knowledge to get a sense of whether it would be worth pursuing additional research to inform a policymaker's decision to implement an in-kind benefit transfer program.
+
+Intuitively, if the decision to implement (not implement) a policy is invariant to variation in welfare cost and benefit estimates within the range of current knowledge, then it is not worth pursuing additional research to inform the decision. By contrast, if decisions are sensitive to underlying welfare cost and benefit parameter uncertainty, then we should pursue additional research to aid the policymaker's decision.
+
+We will next take this exercise one step further to inform prioritization of both the content and scope of future research. That is, we want to isolate the concepts and parameters that have the most information value for informing the underlying decision problem. The third post in in this series will then use this knowledge to efficiently design a prospective (randomized) evaluation to improve knowledge on these dimensions.
+
+<!-- To do so, we will estimate the **expected value of partial perfect information** (EVPPI). The EVPPI, as estimated for individual parameters (or subsets of parameters), allows us to decompose an overall VOI estimate into constituent parts. By rank-ordering parameters based on their relative contribution to the overall VOI, we can prioritize research efforts and focus our efforts on reducing uncertainty along the most important dimensions of the decision problem.  -->
+
+<!-- 2. How can we most efficiently design a prospective clinical trial to reduce information uncertainty in these parameters to the point where a policymaker can make a more confident decision? -->
+
+# Background and Summary
+
+Our running example was based on the welfare benefits and costs of the in-kind benefit, as summarized in @tbl-current.
+
+```{r}
+#| label: tbl-current
+#| tbl-cap: Summary of Current Knowledge 
+
+set.seed(23)
+n <- 1e5
+
+w_inkind <- rlnorm(n, log(1.2),0.1)
+
+fe_inkind <- rnorm(n, 0.35,.02)
+
+c_inkind <- 1+fe_inkind
+
+mvpf_inkind = w_inkind / c_inkind
+
+fround <- function(a,...) format(round(a,...), nsmall = 2)
+
+curr_info <- 
+tibble(
+    #W.cash_mean = fround(mean(w_cash),2), 
+    #W.cash_int = "",
+    #MVPF.cash_mean = fround(mean(mvpf_cash),2),
+    #MVPF.cash_int = glue("[{fround(quantile(mvpf_cash,0.025),2)},{fround(quantile(mvpf_cash,0.975),2)}]"),
+    #C.cash_mean = fround(mean(c_cash),2),
+    #C.cash_int = glue("[{fround(quantile(c_cash,0.025),2)},{fround(quantile(c_cash,0.975),2)}]"),    
+    W.inkind_mean = round(mean(w_inkind),2),
+    W.inkind_int = glue("[{fround(quantile(w_inkind,0.025),2)},{fround(quantile(w_inkind,0.975),2)}]"),
+    MVPF.inkind_mean = fround(mean(mvpf_inkind),2),
+    MVPF.inkind_int = glue("[{fround(quantile(mvpf_inkind,0.025),2)},{fround(quantile(mvpf_inkind,0.975),2)}]"),    
+    C.inkind_mean = round(mean(c_inkind),2),
+    C.inkind_int = glue("[{fround(quantile(fe_inkind,0.025),2)},{fround(quantile(fe_inkind,0.975),2)}]")    
+) 
+    
+curr_info %>% gather(measure,value) %>% 
+    separate(measure,into = c("a","measure"),sep = "_") %>% 
+    separate(a, into = c("outcome","policy"),sep = "\\.") %>% 
+    spread(measure,value) %>% 
+    unite(mean,mean,int,sep = " ") %>% 
+    spread(outcome,mean) %>% 
+    select(policy,MVPF,W,C) %>% 
+    kable(col.names = c("","MVPF [95% interval]", "Benefits [95% Interval]","Costs [95% Interval]")) %>% 
+    kable_styling()
+```
+
+As the table shows, current knowledge is consistent with an MVPF above 1 (i.e., the welfare benefits are greater than the costs) and an MVPF below 1 (i.e., the in-kind benefit transfer results in some redistribution).
+
+We then defined the expected value of perfect information (EVPI) as the expected welfare loss from making the wrong decision:
+
+$$
+NWB(\boldsymbol{\pi},\alpha,\lambda) = W(\boldsymbol{\pi},\alpha) - \lambda \cdot C(\boldsymbol{\pi},\alpha) 
+$$ {#eq-nwb}
+
+$$
+EVPI(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) = E_{\boldsymbol{\pi}} \big [ L_{\alpha^*} \big ]  = E_{\boldsymbol{\pi}} \big [ \max_{\boldsymbol{\alpha}} NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ] - NWB(\alpha^*,\boldsymbol{\pi},\lambda)
+$$ {#eq-evpi}
+
+To break apart @eq-evpi intuitively, when making a policy decision we want to maximize the net welfare benefit (NWB; see @eq-nwb) of various strategies ($\alpha$) under consideration. In practice, we may not know the value of welfare cost and benefit parametes ($\pi$) with certainty, but we can specify their uncertainty distribution. After averaging the net welfare benefit across this uncertainty distribution, we select the strategy with the highest value; this is the second term in @eq-evpi.[^1]
+
+[^1]: More formally, $NWB(\alpha^*,\boldsymbol{\pi},\lambda) = \max_{\boldsymbol{\alpha}} E_{\boldsymbol{\pi}} \big [ NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ]$
+
+We can also envision a related exercise where as we explore the uncertainty distribution (i.e., by taking random draws from the joint uncertainty distributions in $\mathbf{\pi}$), we stop at each step along the way and determine which strategy has the higest Net Welfare Benefit for that particular draw.[^2] We can then compare this NWB value to the NWB value (for that particular draw) of the strategy determined as the optimal in the exercise outlined in the paragraph above.
+
+[^2]: Recall that the net welfare benefit (NWB) is defined as $NWB(\boldsymbol{\pi},\alpha,\lambda) = W(\boldsymbol{\pi},\alpha) - \lambda \cdot C(\boldsymbol{\pi},\alpha)$, where $W(\boldsymbol{\pi},\alpha)$ are the welfare benefits, $C(\boldsymbol{\pi},\alpha)$ are the welfare costs, and $\lambda$ is the societal willingness-to-pay parameter.
+
+To the extent the optimal strategy is the same in each case, then there is no welfare loss from making the wrong decision. To the extent the optimal strategies differ, then the average (over the distribution of $\pi$) difference in the NWB reflects the expected welfare loss; the subtraction in @eq-evpi formalizes this thought experiment.
+
+Another critical takaway from our [earlier exercise](../mvpf-evpi/mvpf-evpi.qmd) was that the EVPI will vary over different values of the societal willingness-to-pay parameter $\lambda$. If $\lambda$ is sufficiently low (high), then there will likely be very little variation in optimal decisions across the distribution of $\pi$; in other words, there may be variation in the NWB outcome, but this variation does not result in meaningful variation in implementation *decisions*. A low (high) VOI value provides our first summary measure of whether it is worth pursuing additional research to improve decision uncertainty.
+
+@fig-evpi traces out the EVPI for various values of $\lambda$ for the running example:
+
+```{r}
+#| label: fig-evpi
+#| fig-cap: Expected Value of Reducing Decision Uncertainty Through Future Research, by Societal Willingness-to-Pay Value (lambda)
+#| layout-ncol: 1
+#| layout-nrow: 1
+#| 
+#Value of eliminating ALL model uncertainty
+#The pmax function takes the max between 0 and each INB separately
+
+inwb <- nwb <- w_inkind - 0.9 *c_inkind
+evpi<-mean(pmax(0,inwb))-max(0,mean(inwb))
+
+evpi_ <- nwb_ <- inwb_ <- mu.theta_ <- sigma.theta_ <- list() 
+
+lambdas <- seq(0.5,1.5,.05)
+
+for (i in 1:length(lambdas)) {
+    lambda <- lambdas[i]
+    
+    nwb_[[i]] <- w_inkind - lambda*c_inkind
+    
+    inwb_[[i]] <- nwb_[[i]] 
+    
+    mu.theta_[[i]] <-mean(inwb_[[i]])
+    sigma.theta_[[i]]<-var(inwb_[[i]])
+    
+    
+    evpi_[[i]] <-  mean(pmax(0,inwb_[[i]]))-max(0,mean(inwb_[[i]]))
+    
+}
+
+tmp_ <- 
+  tibble(lambda = lambdas, evpi = unlist(evpi_))  
+  
+tmp_ %>% ggplot(aes(x = lambda, y = evpi)) + 
+  ggthemes::theme_hc() + 
+  geom_line() + geom_point() +
+  theme(text = element_text(family = "Arial")) + 
+  labs(y = "Expected Value of Perfect Information", 
+       x = "MVPF value of Societal Willingness-to-Pay (lambda)")
+
+ggsave("media/evpi.png")
+```
+
+# What Drives Decision Uncertainty?
+
+Assuming we have determined it fruitful to pursue further research, we now must ask the next logical question: **what elements of** $\mathbf{\pi}$ should this research focus on?
+
+Perhaps there is value in obtaining better information on all parameteters contained within $\mathbf{\pi}$; in that case, we'd need to define a broad research agenda to improve the policymaker's decision process.
+
+Alternatively, suppose there is just a single parameter within $\pi$ that drives all the information value. In that event, we can focus our research efforts on that parameter and avoid wasting (often budget-constrained) resources on future research on the other parameters.
+
+We will next demonstrate how we can refine our research priorities to align them around parameters with the highest decision leverage. To do so, we will decompose the EVPI to determine the degree to which indiviudal parameters (or sets of parameters) contribute the most to the overall EVPI estimate. We will do so by estimating the **expected value of partial perfect information** [@wilsonPracticalGuideValue2015; @strongEstimatingMultiparameterPartial2014].
+
+Suppose we could obtain perfect information on some subset ($\boldsymbol{\pi}_z$) of the parameter(s) that determine the MVPF. If we could obtain perfect information on this subset of parameters, the optimal policy decision can be determined based on the policy alternative with the highest NWB after averaging over the conditional distribution of remaining uncertain parameters $\boldsymbol{\pi}_{-z}$.
+
+$$
+\max_{\boldsymbol{\alpha}} E_{\boldsymbol{\pi_{-z}}|\boldsymbol{\pi_z}}NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) 
+$$
+
+\noindent However, since $\boldsymbol{\pi}_z$ remains unknown, we we must take the expectation over current information:
+
+$$
+E_{\boldsymbol{\pi_z}} \big [  \max_{\boldsymbol{\alpha}} E_{\boldsymbol{\pi_{-z}}|\boldsymbol{\pi_z}}NWB(\boldsymbol{\alpha},\boldsymbol{\pi}_z,\boldsymbol{\pi}_{-z},\lambda) \big ]
+$$
+
+Echoing equation @eq-evpi above, the **expected value of partial perfect information** (EVPPI) is the difference between this quantity and the expected net welfare benefit of the dominant policy strategy [@strongEstimatingMultiparameterPartial2014; @schlaiferAppliedStatisticalDecision1961] :
+
+$$
+EVPPI(\boldsymbol{\pi}_z,\lambda) = E_{\boldsymbol{\pi_z}} \big [  \max_{\boldsymbol{\alpha}} E_{\boldsymbol{\pi_{-z}}|\boldsymbol{\pi_z}}NWB(\boldsymbol{\alpha},\boldsymbol{\pi}_z,\boldsymbol{\pi}_{-z},\lambda) \big ] - 
+E_{\boldsymbol{\pi}}[NWB(\alpha^*,\boldsymbol{\pi},\lambda)]
+$$ {#eq-evppi}
+
+Note that this formal thought exercise has still left us in a theoretical world where we obtain **perfect** information on some (or all) parameters; that's obviously not realistic, as in practice we will only be able to get information based on a sample of the population. We'll get to how we can efficiently sample the population for this information (by prospetively designing a randomized evaluation) in the third post in this series. For now, however, we will discuss how we can harness current knowledge to come up with an estimate of the EVPPI that can guide this future research.
+
+## Estimating the Expected Value of Partial Perfect Information
+
+We can estimate the EVPPI by drawing values from the joint uncertainty distributions of $W^{\text{inkind}}(\mathbf{\pi},\alpha)$ and $C^{\text{inkind}}(\mathbf{\pi},\alpha)$.
+
+Specifically, suppose we construct a $K$-sized sample of model outputs from a Monte Carlo-based exercise. That is, we draw sets of parameters $\boldsymbol{\pi}^{(1)},\ldots,\boldsymbol{\pi}^{(K)}$ and generate a $K$-sized vector of net welfare benefits for a given $\lambda$ value.
+
+The code below samples the constituent pieces for the MVPF and NWB for $\lambda=0.88$:
+
+```{r, echo = TRUE}
+set.seed(23)
+K <- 1e5
+lambda = 0.88
+w_inkind = rlnorm(K, log(1.2),0.1)
+fe_inkind = rnorm(K, 0.35,.02)
+c_inkind = 1+fe_inkind
+nwb_inkind = w_inkind - lambda * c_inkind
+```
+
+<!-- We can estimate the second term of @eq-evppi as : -->
+
+<!-- $$ -->
+
+<!-- \max_{\boldsymbol{\alpha}} \frac{1}{K} \sum_{k=1}^K NWB(\boldsymbol{\alpha},\boldsymbol{\pi}^{(k)},\lambda) -->
+
+<!-- $$ {#eq-evppi_est_2} -->
+
+At $\lambda = 0.88$ the in-kind benefit passes the societal cost-benefit test, so implementation of the in-kind benefit (as compared with doing nothing) is the optimal strategy based on current information. Therefore, the second term in @eq-evppi (i.e., $E_{\boldsymbol{\pi}}[NWB(\alpha^*,\boldsymbol{\pi},\lambda)]$) is simply the average NWB of the in-kind benefit:
+
+```{r, echo = TRUE}
+evppi_2 <- pmax(0,mean(nwb_inkind))
+evppi_2
+```
+
+Estimation of the conditional expectation in the first term in equation @eq-evppi is less straightforward. Borrowing from the approach in @strongEstimatingMultiparameterPartial2014, we can express the NWB outcome as the sum of a conditional expectation plus a mean-zero error term:
+
+$$
+NWB(\boldsymbol{\alpha},\boldsymbol{\pi^{(k)}},\lambda)  =  E_{\boldsymbol{\pi_{-z}}|\boldsymbol{\pi_z}=\boldsymbol{\pi_z}^{(k)}}NWB(\boldsymbol{\alpha},\boldsymbol{\pi}_z^{(k)},\boldsymbol{\pi}_{-z},\lambda)  + \epsilon^{(k)}
+$$ {#eq-evppi_est_1_1}
+
+In addition, the expectation in equation @eq-evppi_est_1_1 can be thought of in terms of an unknown function $g(\cdot)$ of $\boldsymbol{\pi_z}$:
+
+$$
+NWB(\boldsymbol{\alpha},\boldsymbol{\pi^{(k)}},\lambda)  = g(\boldsymbol{\alpha},\boldsymbol{\pi}_z^{(k)},\lambda) + \epsilon^{(k)}
+$$ {#eq-evppi_est_1}
+
+Based on equation @eq-evppi_est_1, one option is to estimate the conditional expectation using a "metamodel," or a regression model predicting how the net welfare benefit for a particular policy varies with unknown parameters of interest $\boldsymbol{\pi}_z$. For example, a metamodel might specify the function $g(\cdot)$ as a standard linear regression. Alternatively, we might not wish to impose a functional form and instead estimate $g(\cdot)$ nonparametrically.[^3]
+
+[^3]: If we suspect the underlying relationships have important nonlinearities in the parameters of interest, we could also appeal to machine learning methods to estimate $g(\cdot)$.
+
+The code below estimates basic metamodels separately for welfare benefits and costs using a generalized additive model:[^4]
+
+[^4]: In our running example, we have a scalar value for welfare benefits and costs, so the metamodels end up being quite simple in structure. In principle, however, multiple parameters might inform the overall welfare cost or benefit values---in which case we could think of estimating metamodels separately for each, or combine them all into a single metamodel with interaction terms, etc. to capture dependencies or nonlinearities among them in determining the overall welfare benefit or cost value.
+
+```{r, echo = TRUE}
+# Metamodel for welfare benefits
+gam.w <- gam(nwb_inkind ~ w_inkind)
+
+# Metamodel for welfare costs
+gam.c <- gam(nwb_inkind ~ c_inkind)
+```
+
+Because we are comparing the in-kind benefit policy to doing nothing (i.e., a policy with zero-valued welfare costs and benefits), the inner (square bracketed) term of the first term in @eq-evppi can be estimated by taking the maximum of 0 and the predicted values from the metamodels:
+
+```{r, echo = TRUE}
+evppi_w_inner <-pmax(0,gam.w$fitted)
+evppi_c_inner <-pmax(0,gam.c$fitted)
+```
+
+The outer expectation of the first term in @eq-evppi is estimated using the average across the $K$ probabilistic draws:
+
+```{r, echo = TRUE}
+evppi_w_1 = mean(evppi_w_inner)
+evppi_c_1 = mean(evppi_c_inner)
+```
+
+And finally, the EVPPI for welfare costs and benefits is estimated by the difference:
+
+```{r, echo = TRUE}
+evppi_w = evppi_w_1 - evppi_2
+evppi_c = evppi_c_1 - evppi_2
+
+c("EVPPI_W" = evppi_w, 
+  "EVPPI_C" = evppi_c)
+```
+
+From these estimates of the EVPPI we would conclude that the component of $\mathbf{\pi}$ with the highest information value is $W(\boldsymbol{\pi},\alpha)$.
+
+# Summarizing Gaps in Current Knowledge
+
+The exercise above provided valuable and actionable information: for a given value of $\lambda=0.88$, future research would be best served by focusing on improving our knowledge of the welfare benefits of an in-kind benefit transfer. Improving our knowledge on the welfare costs has some value---but the information we can gain on costs is considerablylower than the information value we could gain from more knowledge on welfare benefits.
+
+Because we are working from a very simple example with two uncertain parameters, we can also get a visual sense of the EVPPI by looking at the plotted welfare and cost values from the Monte Carlo exercise. @fig-mvpf reproduces a similar joint uncertainty distribution figure (based on $\lambda=0.88$) as [part one](../mvpf-evpi/mvpf-evpi.qmd) of this series.
+
+Notice that the uncertainty distribution for welfare benefits is more widely distributed across the x-axis, while the uncertainty distribution for costs is more tighly bound across the y-axis.
+
+```{r}
+#| label: fig-mvpf
+#| fig-cap: Welfare Cost and Benefits Overlaid With Decision Rules Based on $\lambda$=0.88
+
+set.seed(123)
+
+tmp_ <- 
+    tibble(
+        #w_cash = 1,
+        #c_cash = c_cash,
+        w_inkind = w_inkind,
+        c_inkind = c_inkind
+        )  %>% 
+    mutate(id = row_number()) 
+
+tmp_summ_1_ <- 
+    tmp_ %>% 
+    summarise(
+          # w_cash = mean(w_cash),
+           #c_cash = mean(c_cash),
+           w_inkind = mean(w_inkind),
+           c_inkind = mean(c_inkind)) %>% 
+    mutate(id =1) %>% 
+    gather(measure,value,-id) %>%
+    separate(measure, into = c("outcome","strategy")) %>% 
+    spread(outcome,value) %>% 
+    mutate(nwb = w - 1 * c) %>% 
+    mutate(decision = factor(as.integer(nwb>=0),levels = c(0,1),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+    filter(strategy=="inkind")
+
+tmp_summ_.9_ <- 
+    tmp_ %>% 
+    summarise(
+          # w_cash = mean(w_cash),
+           #c_cash = mean(c_cash),
+           w_inkind = mean(w_inkind),
+           c_inkind = mean(c_inkind)) %>% 
+    mutate(id =1) %>% 
+    gather(measure,value,-id) %>%
+    separate(measure, into = c("outcome","strategy")) %>% 
+    spread(outcome,value) %>% 
+    mutate(nwb = w - .88 * c) %>% 
+    mutate(decision = factor(as.integer(nwb>=0),levels = c(0,1),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+    filter(strategy=="inkind")
+
+tmp_summ_.5_ <- 
+    tmp_ %>% 
+    summarise(
+           #w_cash = mean(w_cash),
+           #c_cash = mean(c_cash),
+           w_inkind = mean(w_inkind),
+           c_inkind = mean(c_inkind)) %>% 
+    mutate(id =1) %>% 
+    gather(measure,value,-id) %>%
+    separate(measure, into = c("outcome","strategy")) %>% 
+    spread(outcome,value) %>% 
+    mutate(nwb = w - .5 * c) %>% 
+    mutate(decision = factor(as.integer(nwb>=0),levels = c(0,1),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+    filter(strategy=="inkind")
+
+
+p1 <-    tmp_ %>% 
+        filter(id %in% sample(1:nrow(.),1000)) %>% 
+        select(id,w_inkind,c_inkind) %>% 
+        gather(measure,value,-id) %>%
+        separate(measure, into = c("outcome","strategy")) %>% 
+        spread(outcome,value) %>% 
+        mutate(nwb = w - c) %>% 
+        mutate(decision = factor(as.integer(nwb>=0),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+        filter(strategy=="inkind") %>% 
+        ggplot(aes(x = w, y = c,colour = decision)) + 
+        ggthemes::theme_hc() + 
+        geom_point(alpha = 0.08) +
+        theme(text = element_text(family = "Arial")) + 
+        lims(x = c(0,2),y = c(0,1.5)) + 
+        geom_abline(aes(intercept = 0, slope =1),lty=2) + 
+        geom_point(data = tmp_summ_1_,size = 5,pch=18, colour = "green") +
+        ggsci::scale_colour_jama() 
+
+p1_f <- direct.label(p1,method = list("ahull.grid"))
+#p1_f
+
+p2 <-    tmp_ %>% 
+        filter(id %in% sample(1:nrow(.),1000)) %>% 
+        select(id,w_inkind,c_inkind) %>% 
+        gather(measure,value,-id) %>%
+        separate(measure, into = c("outcome","strategy")) %>% 
+        spread(outcome,value) %>% 
+        mutate(nwb = w - 0.9 * c) %>% 
+        mutate(decision = factor(as.integer(nwb>=0),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+        filter(strategy=="inkind") %>% 
+        ggplot(aes(x = w, y = c,colour = decision)) + 
+        ggthemes::theme_hc() + 
+        geom_point(alpha = 0.08) +
+        theme(text = element_text(family = "Arial")) + 
+        lims(x = c(0,2),y = c(0,1.5)) + 
+        ggsci::scale_colour_jama() + 
+        geom_abline(aes(intercept = 0, slope =1/.9),lty=2) + 
+        geom_point(data = tmp_summ_.9_,size = 5,pch=18, colour = "green")
+
+p2_f <- direct.label(p2,method = list("ahull.grid"))
+p2_f
+
+
+p3 <-    tmp_ %>% 
+        filter(id %in% sample(1:nrow(.),1000)) %>% 
+        select(id,w_inkind,c_inkind) %>% 
+        gather(measure,value,-id) %>%
+        separate(measure, into = c("outcome","strategy")) %>% 
+        spread(outcome,value) %>% 
+        mutate(nwb = w - 0.5 * c) %>% 
+         mutate(decision = factor(as.integer(nwb>=0),levels = c(0,1),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+        filter(strategy=="inkind") %>% 
+        ggplot(aes(x = w, y = c,colour = decision)) + 
+        ggthemes::theme_hc() + 
+        geom_point(alpha = 0.08) +
+        theme(text = element_text(family = "Arial")) + 
+        lims(x = c(0,2),y = c(0,1.5)) + 
+        scale_colour_manual(values="#DF8F44FF") +
+        geom_abline(aes(intercept = 0, slope =1/.5),lty=2) + 
+        geom_point(data = tmp_summ_.5_,size = 5,pch=18, colour = "green")
+
+p3_f <- direct.label(p3,method = list("ahull.grid"))
+#p3_f
+
+```
+
+The wider variation in welfare costs implies that as the ray from the origin (with slope $\frac{1}{\lambda}$) sweeps across the plot (as we change the value of $\lambda$), variation in decisions is more likely to be driven by variation in the welfare benefit estimate than costs; this is exactly what we quantified with the EVPPI.
+
+Of course, for many applications the parameter vector $\mathbf{\pi}$ may be multidimensional---making this kind of visual EVPPI exercise more difficult to carry out. Moreover, our estimated EVPPI values are for a single $\lambda=0.88$---and it is hard to say for sure that our selected value of $\lambda$ maps to social preferences.
+
+For this reason we can think about estimating the EVPPI for various values of lambda, and then plotting the EVPPI for welfare costs and benefits across this range. @fig-evppi plots the results of such an exercise:
+
+```{r}
+#| label: fig-evppi
+#| fig-cap: Expected Value of Reducing Decision Uncertainty Through Future Research, by MVPF Input Type and Societal Willingness-to-Pay Value (lambda)
+#| layout-ncol: 1
+#| layout-nrow: 1
+
+
+est_evppi <- function(x) {
+  nwb_inkind = w_inkind - x * c_inkind
+  evppi_2 <- mean(pmax(0,mean(nwb_inkind)))
+  
+  # Metamodel for welfare benefits
+  gam.w <- gam(nwb_inkind ~ w_inkind)
+  
+  # Metamodel for welfare costs
+  gam.c <- gam(nwb_inkind ~ c_inkind)
+
+  evppi_w_inner <-pmax(0,gam.w$fitted)
+  evppi_c_inner <-pmax(0,gam.c$fitted)
+  
+  evppi_w_1 = mean(evppi_w_inner)
+  evppi_c_1 = mean(evppi_c_inner)
+  
+  evppi_w = evppi_w_1 - evppi_2
+  evppi_c = evppi_c_1 - evppi_2
+  
+  c("EVPPI_W" = evppi_w, 
+    "EVPPI_C" = evppi_c)
+}
+
+evppi_lambda <- 
+  seq(0.2,1.2,0.02) %>% 
+  map(~(est_evppi(.x)))
+
+xlab <- expression(paste("MVPF Value of Societal Willingness-to-Pay (",lambda,")"))
+  
+p <- evppi_lambda %>% bind_rows() %>% 
+  mutate(lambda = seq(0.2,1.2,0.02))  %>% 
+  gather(measure, value, -lambda) %>% 
+  ggplot(aes(x = lambda, y = value, colour = measure)) + 
+  geom_point() + geom_line() +
+  ggsci::scale_color_jama() +
+  ggthemes::theme_hc() + 
+  geom_line() + geom_point() +
+  theme(text = element_text(family = "Arial")) + 
+  labs(y = "Expected Value of Partial Perfect Information", 
+       x = xlab)
+direct.label(p, method = list("top.points"))
+```
+
+## Next Steps
+
+A this point we have:
+
+1.  [Explored the range of current knowledge]((../mvpf-evpi/mvpf-evpi.qmd)) to ascertain whether future research could help a policymaker's decision to pursue an in-kind benfefit transfer program.
+
+2.  Decomposed the value of information to identify the parameters with highest decision leverage.
+
+As mentioned above, however, our estimates of the value of information are based on a theoretical exercise under which we obtain *perfect information* on uncertain parameters. In practice, however, we do not have unlimited resources to reduce information uncertainty to zero; we must weigh the costs and benefits of sampling the population---perhaps by carrying out a randomized evaluation of the in-kind benefit transfer---to obtain better, but not perfect, information.
+
+The next post in this series will explore different study designs so that we can optimally design a randomized evaluation in such a way as to efficiently gain information to inform the decision.

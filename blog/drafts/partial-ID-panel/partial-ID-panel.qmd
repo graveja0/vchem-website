@@ -1,0 +1,1134 @@
+---
+title: "Bounds Under Endogenous Treatment Assignment: Panel Data Approaches"
+author: John Graves
+date: "2023-01-16"
+categories: [Causal Inference]
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: false
+  cache: true
+  message: false
+  warning: false  
+  code-fold: true
+bibliography: "../../../references.bib"
+reference-location: margin
+self-contained: true
+---
+
+```{r, cache = FALSE}
+library(tidyverse)
+library(here)
+library(glue)
+devtools::load_all(here("blog/resources/csabounds/"))
+library(hrbrthemes)
+library(directlabels)
+library(tidyverse)
+library(here)
+library(glue)
+library(MASS)
+library(scam)
+library(patchwork)
+library(hrbrthemes)
+library(directlabels)
+library(mgcv)
+library(progress)
+library(patchwork)
+data(displacements)
+theme_set(theme_ipsum())
+filter <- dplyr::filter
+```
+
+# Bounds on Distributional Treatment Effects Using Panel Data
+
+## Notation and Quantities of Interest
+
+-   Let $D=1$ for treated and $D=0$ for untreated.
+-   Need at least three time periods (two pre and one post).
+    -   $s$ represents a generic time period
+    -   $t$, $t-1$, and $t-2$ represent the three time periods.
+-   Potential outcomes are given by $Y_{1s}$ and $Y_{0s}$.
+-   $Y_s$ is the observed outcome in time period $s$.
+
+Callaway:
+
+![](images/image-729417114.png)
+
+Williamson and Downs (1990):
+
+![](images/image-136704950.png)
+
+Frandsen and Lefgren (2021):
+
+![](images/image-60005441.png){width="800"}
+
+### ![](images/image-551337302.png){width="350"}
+
+![](images/image-1801258383.png)
+
+### Average Treatment Effect on the Treated (ATT)
+
+$$
+ATT = E[Y_{1t}-Y_{0t}|D=1]
+$$
+
+### Quantile Treatment Effect on the Treated (QTT)
+
+$$
+QTT(\tau) = F_{Y_{1t|D=1}}^{-1}(\tau) - F_{Y_{0t|D=1}}^{-1}(\tau)
+$$
+
+### Distribution of the Treatment Effect on the Treated (DoTT)
+
+$$
+DoTT(\delta) = P(Y_{1t}-Y_{0t} \leq \delta | D=1)
+$$
+
+### Quantile of hte Treatment Effect on the Treated (QoTT)
+
+$$
+QoTT(\tau) = \inf \{ \delta: DoTT(\delta) \geq \tau \}
+$$ - QoTT(0.05) is the 5th percentile of the individual level treatment effect. - QoTT(0.5) is the median of the individual level treatment effect.
+
+# Preliminary Estimators
+
+## $\hat F_{Y_{1t}|Y_{0t-1},X,D=1}$
+
+We will construct an estimate of $\hat F_{Y_{1t}|Y_{0t-1},X,D=1}$ using the observed post treatment period outcome among the treated group, but conditioning on the last pre treatment period outcome value.
+
+$\hat F_{Y_{1t}|Y_{0t-1},X,D=1}$ is identified through the sampling process---in much the way that $Y(1)|D=1$ is an observed quantity as well (i.e., it does not involve a counterfactual). So in that sense, it's the easiest place to start from.
+
+Let's first collect the objects we need.
+
+```{r, echo = TRUE}
+Y1t <- # Outcome vector for treated group in post-treatment period
+  displacements %>% filter(treat==1 & year==2011) %>% pull(learn)
+
+Y1tm1 <-  # Outcome vector for treated group in last pre-treatment period. 
+  # This is the variable we will condition on in the conditional CDF of Y1t.  
+  displacements %>% filter(treat==1 & year==2007) %>% pull(learn)
+
+# Get 100 evenly spaced points along the support of the outcome. 
+Yrange <- 
+  displacements %>% pull(learn) %>% range()
+y_ <- 
+  seq(floor(Yrange[1]),ceiling(Yrange[2]),length.out = 100)
+```
+
+Let's start with a "conditional" CDF that is just an intercept model---that is, a regression model that does *not* condition on the pre-treatment outcome. This seems a bit silly, as it should simply recover a bunch of identical CDFs. But it's a good way to make sure the underlying machinery is working before we get into a more advanced model.
+
+Here is the process:
+
+-   Iterate over each $X$ variable value (i.e., $Y_{1tm1}$, the treated group's outcome in the last pre-treatment period). This is the **"outer" loop**.
+
+-   For each value of X, iterate over the support of the outcome, i.e., `y_`. This is the **"inner" loop**.
+
+    1.  At each value $y$, construct an indicator ($IY$) set to one if $Y_{1t}<=y$ and 0 otherwise.
+    2.  Run the model of $IY=h(X)$ we want. It could be a simple linear regression. It could be a nonparametric regression. Or some kind of flexible local logit regression (this is what the `csabounds` package uses). For now, it's just an intercept model, i.e., `lm(IY ~ 1)`.
+
+    -   Obtain the predicted values from this model.
+
+```{r, echo = TRUE}
+Xvar <- # X variable to condition on 
+  Y1tm1[order(Y1tm1)]
+
+hatFY1 <- # Empty object to collect the results
+  list()
+
+for (.x in Xvar) { # outer loop is over X
+  res <- list() # need to collect some results
+  for (.y in y_) { # inner loop is over y_ 
+    IY <-  # define a temporary (indicator) outcome.
+      as.integer(Y1t <= .y)
+    X <-   # The model matrix is simply an intercept
+      matrix(1, nrow = length(Y1t))
+    dat <- # Combine together into a data frame. 
+      cbind.data.frame(IY = IY, cons = X)
+    fit <- # Fit a standard logit model of the binary outcome. 
+      glm(IY ~ cons - 1, data = dat, family = "binomial")
+    res[[paste0(.y)]] <-  # Obtain the predicted values of the model
+      predict(fit, type = "response") %>% mean()
+  }
+  hatF <- unlist(res)
+  
+  # We now have a vector of predicted values -- one for 
+  # each value of y_. We will create a function that 
+  # takes as its input y_, and outputs F(y_|X=.x) (i.e.,
+  # the predicted values from above.). 
+  
+  hatFY1[[paste0(.x)]] <- 
+    approxfun(y_, hatF, method = "constant", yleft = 0, yright = 1, f = 0, ties = "ordered")
+}
+```
+
+Because this is just an intercept model that doesn't actually condition on anything, it should simply recover the empirical CDF. Let's verify this.
+
+The below plots three objects:
+
+1.  The constructed "conditional" CDF for $X$=`r Y1tm1[1]` \[black\]
+2.  The constructed "conditional" CDF for $X$=`r Y1tm1[133]` \[red\]
+3.  The calculated empirical CDF for $Y$ (i.e., `ecdf(Y1t)`) \[blue\]
+
+For 1-3, we randomly sample 30 points to plot (rather than show all 100 in `y_`) so that overlapping points can be viewed. As the figure makes clear, through an intercept-only model we have successfully recovered the (unconditional) empricial CDF.
+
+```{r}
+set.seed(123)
+sy_ <- sample(y_,30,replace=FALSE)
+plot(sy_,hatFY1[[1]](sy_))
+sy_ <- sample(y_,30,replace=FALSE)
+points(sy_,hatFY1[[13]](sy_),col="red")
+sy_ <- sample(y_,30,replace=FALSE)
+points(sy_,ecdf(Y1t)(sy_),col="blue")
+```
+
+And for the sake of completeness, here's the same but showing all 100 `y_` points for each:
+
+```{r}
+plot(y_,hatFY1[[1]](y_))
+points(y_,hatFY1[[50]](y_),col="red")
+points(y_,ecdf(Y1t)(y_),col="blue")
+```
+
+Let's next fit a generalized additive model that flexibly accommodates our $X$ variable we want to condition on. The code below is nearly identical to the above, except rather than a linear model we fit `gam(IY ~ s(Ytmin1), data = dat, family = "binomial")`.
+
+Again, the plot below shows three CDFs:
+
+1.  The constructed "conditional" CDF for $X$=`r Y1tm1[1]` \[black\]
+2.  The constructed "conditional" CDF for $X$=`r Y1tm1[133]` \[red\]
+3.  The calculated empirical CDF for $Y$ (i.e., `ecdf(Y1t)`) \[blue\]
+
+```{r}
+Xvar <- # X variable to condition on 
+  Y1tm1[order(Y1tm1)]
+
+hatFY1 <- list()
+
+for (.x in Xvar) {
+  res <- list()
+  for (.y in y_) {
+    IY <- as.integer(Y1t <= .y)
+    X <- cbind(1,Y1tm1-.x)
+    dat <- cbind.data.frame(IY = IY, X) %>% 
+      set_names(c("IY","cons","Ytmin1")) %>% 
+      as_tibble()
+    fit <- gam(IY ~ s(Ytmin1), data = dat, family = "binomial")
+    res[[paste0(.y)]] <- # Store the predicted value
+      predict(fit, type = "response", newdata = dat %>% mutate(Ytmin1=0)) %>% mean()
+  }
+  hatF <- unlist(res)
+  hatFY1[[paste0(.x)]] <- 
+    approxfun(y_, hatF, method = "constant", yleft = 0, yright = 1, f = 0, ties = "ordered")
+}
+
+plot(y_,hatFY1[[1]](y_))
+points(y_,hatFY1[[50]](y_),col="red")
+points(y_,ecdf(Y1t)(y_),col="blue")
+```
+
+These are a bit too chunky, and they also violate the requirement that a CDF is monotonically increasing. We can address this by fitting a smooth function to the points, and imposing a shape constraint (i.e., monotonically increasing, between 0 and 1) using the methods [here](https://link.springer.com/article/10.1007/s11222-013-9448-7). This can be done using the R package `scam`, and using code inspired by [this source](https://stackoverflow.com/questions/51438627/get-the-derivative-of-an-ecdf).
+
+```{r}
+Xvar <- # X variable to condition on 
+  Y1tm1[order(Y1tm1)]
+
+shatFY1 <- list()
+
+for (x in 1:length(Xvar)) {
+  .x <- Xvar[x]
+  res <- list()
+  for (.y in y_) {
+    IY <- as.integer(Y1t <= .y)
+    X <- cbind(1,Y1tm1-.x)
+    dat <- cbind.data.frame(IY = IY, X) %>% 
+      set_names(c("IY","cons","Ytmin1")) %>% 
+      as_tibble()
+    fit <- gam(IY ~ s(Ytmin1), data = dat, family = "binomial")
+    res[[paste0(.y)]] <- predict(fit, type = "response", newdata = dat %>% mutate(Ytmin1=0)) %>% mean()
+  }
+  hatF <- unlist(res)
+
+  # Create a smoothed version based on a shape constrained additive model.
+  n.knots = 20
+  dat <-
+        tibble(x = y_, cdf=unlist(res)); head(dat)
+
+  n <- length(dat$x)
+  fit <- scam::scam(cdf ~ s(x, bs = "mpi", k = n.knots), data = dat,
+                    weights = c(n, rep(1, n - 2), 10 * n))
+  ## interior knots
+  xk <- with(fit$smooth[[1]], knots[4:(length(knots) - 3)])
+  ## spline values at interior knots
+  yk <- predict(fit, newdata = data.frame(x = xk))
+  ## reparametrization into a monotone interpolation spline
+  xg <- seq(min(dat$x), max(dat$x), length = 100)
+  f <- stats::splinefun(xk, yk, "hyman")
+  pcdf <- f(y_)
+
+  shatFY1[[paste0(x)]] <- # Collect into a function
+    approxfun(y_, f(y_), 
+              method = "constant", 
+              yleft = 0, 
+              yright = 1, 
+              f = 0, 
+              ties = "ordered")
+}
+
+plot(y_,shatFY1[[1]](y_))
+points(y_,shatFY1[[50]](y_),col="red")
+points(y_,ecdf(Y1t)(y_),col="blue")
+```
+
+That's much better! And the net result is a new object called `shatFY1` which has length `r length(shatFY1)`--one conditional CDF for each of the unique values of `Y1tm1` in the underlying data.
+
+It's worth noting that a generalized additive model is not the only choice we can make here. The `csabounds` package, for example, uses a local logistic regression. Let's see how that compares. In the figure below, the blue points are based on a nonparametric GAM model, while the red points are based on local logistic regression. The estimated conditional CDFs are simliar, but not identical.
+
+```{r}
+Xvar <- # X variable to condition on 
+  Y1tm1[order(Y1tm1)]
+
+shatFY1.logit <- list()
+
+for (x in 1:length(Xvar)) {
+  .x <- Xvar[x]
+  res <- list()
+  n <- length(Y1t)
+  h <- 1.06*sd(Y1tm1)*n^(-1/4) 
+         
+  for (.y in y_) {
+    IY <- as.integer(Y1t <= .y)
+    
+    X_ <- Y1tm1 - .x
+    o <-
+      optim(
+        c(0, 0),
+        wll,
+        gr = wgr,
+        y = IY,
+        x = X_,
+        thisx = 0,
+        h = h,
+        control = list(maxit = 1000, reltol = 1e-2),
+        method = "BFGS"
+      )
+    thet <- o$par
+    res[[paste0(.y)]] <- G(thet[1])
+    
+  }
+  hatF <- unlist(res)
+  
+  # Create a smoothed version
+  n.knots = 20
+  dat <-
+        tibble(x = y_, cdf=unlist(res)); head(dat)
+    
+    n <- length(dat$x)
+    fit <- scam::scam(cdf ~ s(x, bs = "mpi", k = n.knots), data = dat,
+                      weights = c(n, rep(1, n - 2), 10 * n))
+    ## interior knots
+    xk <- with(fit$smooth[[1]], knots[4:(length(knots) - 3)])
+    ## spline values at interior knots
+    yk <- predict(fit, newdata = data.frame(x = xk))
+    ## reparametrization into a monotone interpolation spline
+    xg <- seq(min(dat$x), max(dat$x), length = 100)
+    f <- stats::splinefun(xk, yk, "hyman")
+    pcdf <- f(y_)
+
+  
+  shatFY1.logit[[paste0(x)]] <- approxfun(y_, f(y_), method = "constant", yleft = 0, yright = 1, f = 0, ties = "ordered")
+}
+
+plot(y_,shatFY1[[50]](y_))
+points(y_,shatFY1.logit[[50]](y_),col="red")
+
+```
+
+```{r}
+
+
+
+estimate_conditional_Y1 <- function(df, D, Y, t,resolution = 100, model = "logit") {
+    D_ <- enquo(D)
+    Y_ <- enquo(Y)
+    t_ <- enquo(t)
+
+    Y1t <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2011) %>% pull({{Y_}})
+    Y1tm1 <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2007) %>% pull({{Y_}})
+    Y1tm2 <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2003) %>% pull({{Y_}})
+
+    range_ <- df %>% pull({{Y_}}) %>% range()
+    y_ <- seq(floor(range_[1]-.1),ceiling(range_[2]+.1),length.out = resolution)
+    
+    pb <- progress_bar$new(total = length(Y1tm1))
+     condF <- Y1tm1[order(Y1tm1)] %>% 
+       map(~({
+         pb$tick()
+         n <- length(Y1t)
+         X <- cbind(Y1tm1-.x)
+         X_ <- Y1tm1-.x
+         h <- 1.06*sd(Y1tm1)*n^(-1/4) 
+         y_ %>% map_dbl(~({
+           
+           if (model == "GAM") {
+             IY <- 1 * (Y1t <= .x)
+             dat <- cbind.data.frame(IY, X) %>%
+               set_names(c("IY", "X"))
+             fit <-
+               gam(IY ~ s(X), data = dat, family = "binomial")
+             predict(fit,  newdata = data.frame(X = 0), type = "response") %>% mean()
+           } else if (model == "logit") {
+             IY <- 1 * (Y1t <= .x)
+             o <-
+               optim(
+                 c(0, 0),
+                 wll,
+                 gr = wgr,
+                 y = IY,
+                 x = X_,
+                 thisx = 0,
+                 h = h,
+                 control = list(maxit = 1000, reltol = 1e-2),
+                 method = "BFGS"
+               )
+             thet <- o$par
+             G(thet[1])
+           }
+         }))
+       })) %>% 
+       set_names(paste0(Y1tm1[order(Y1tm1)]))
+     
+     condF_ <- 
+       condF %>% 
+       map(~({
+         BMisc::makeDist(y_, .x, TRUE)
+       }))
+     return(condF_)
+  }
+  
+hatFY1 <- 
+  displacements %>% 
+    estimate_conditional_Y1(df = ., 
+                            D = treat, 
+                            Y = learn, 
+                            t = year , 
+                            resolution = 100, 
+                            model = "logit")
+
+```
+
+## $\hat F_{Y_{0t}|Y_{0t-1},X,D=1}$
+
+We now need to fit the second preliminary object---and this object requires a counterfactual.
+
+### Changes-in-Changes
+
+We will appeal to a changes-in-changes identification framework to construct the counterfactual CDF.
+
+Let's clearly state our target of interest right up front: what we are after is the **conditional CDF of the treated group's counterfactual outcomes in the post-treatment period.**
+
+```{r, echo = FALSE}
+Y0t <- displacements %>% filter(treat==0  & year==2011) %>% pull(learn)
+Y0tm1 <- displacements %>% filter(treat==0  & year==2007) %>% pull(learn)
+Y1tm1 <- displacements %>% filter(treat==1  & year==2007) %>% pull(learn)
+Y1tm2 <- displacements %>% filter(treat==1  & year==2003) %>% pull(learn)
+range_ <- range(displacements$learn)
+y_ <- seq(floor(range_[1]-.1),ceiling(range_[2]+.1),length.out = 100)
+
+F.treated.t.cf <- ecdf(quantile(Y0t, probs = ecdf(Y0tm1)(Y1tm1), type = 1))
+```
+
+To construct this counterfactual distribution, we'll start in the last pre-treatment period (i.e., period $t-1$).
+
+First, let's consider the distribution of the outcome of the **untreated** group at $t-1$:
+
+```{r,echo = TRUE, fig.height = 8, fig.cap = "Outcome Distribution of Untreated Group at t-1"}
+Y0tm1 <- displacements %>% filter(treat==0  & year==2007) %>% pull(learn)
+
+df_ <-
+  tibble(y = Y0tm1)
+
+p1 <- df_ %>% 
+  ggplot(aes(x = y)) + geom_density() + 
+  ggtitle("PDF of Y at t-1 in untreated group")
+
+p2 <- df_ %>% 
+  ggplot(aes(x = y)) + stat_ecdf() + 
+  ggtitle("eCDF of Y at t-1 in untreated group")
+
+p1 / p2
+```
+
+The bottom panel of the figure shows the empirical CDF for this distribution. This function tells us, for a given value of $Y$, the quantile in this distribution that value maps to.
+
+So with this eCDF in mind, we can plug in the $Y$ values for the **treated** group at the same time (t-1). That is, we can find the quantile in the *untreated* group's distribution that each value of the treated group's outcome maps to.
+
+In the plots below, we overlay the **treated** group's outcome at $t-1$ in blue. The top panel shows that the distributions are somewhat different; the "rug" plot on the axes in bottom panel shows both where the density of values in the treated group are (x-axis), as well as what quantile in the untreated groups eCDF these values map to (y-axis).
+
+```{r, echo = TRUE, fig.height = 8, fig.cap = "Outcome Distribution of Untreated Group at t-1"}
+p1_ <- 
+  df_ %>% 
+  ggplot(aes(x = y)) + geom_density() + 
+  ggtitle("PDF of Y at t-1 in untreated (black)\n and treated (blue) group") + 
+  geom_density(data = tibble(y = Y1tm1), col = "blue")
+
+p2_ <- 
+  p2 + 
+  geom_rug(data = tibble(x = Y1tm1,y=ecdf(Y0tm1)(Y1tm1)),aes(x=x,y=y), col = "blue") + 
+  ggtitle("eCDFof Y at t-1 in untreated (black)\n and treated (blue) group") 
+p1_ / p2_
+```
+
+To get the counterfactual distribution in the *post* period, we'll take the quantile values from the y-axis of the bottom plot of the figure and ask: what happens at these quantiles in the *post* period for the untreated group?
+
+This question makes the counterfactual intuition a bit more clear. Take, for example, a treated group indiviudal's $t-1$ outcome value of 10.79, which maps to (roughly) the 50th percentile of the untreated group's (at time $t-1$) outcome distribution. We then ask, what is the value at the 50th percentile of the untreated group at time $t$?
+
+```{r, echo = TRUE}
+quantile(Y0t,0.5)
+```
+
+So here we see that, from the last pre period to the post period, the 50th percentile value changes from 10.79 to 10.88 in the untreated group. The value 10.88 is the counterfactual outcome in the post treatment period for a treated group individual with an outcome value of 10.79 in the last pre-treatment period.
+
+```{r, echo = TRUE}
+Y1t_cfx <-
+  quantile(Y0t, probs = ecdf(Y0tm1)(Y1tm1), type = 1)
+```
+
+We'll now expand this exercise to *all* outcome values in the treated group to get a *distribution* of counterfactuals:
+
+```{r, echo = TRUE, fig.height = 8, fig.cap = "Observed and Counterfactual Outcome Distribution"}
+
+cfx <- 
+  quantile(Y0t, probs = ecdf(Y0tm1)(Y1tm1), type = 1)
+
+df_cfx <-
+  df_ %>% 
+  mutate(y_cfx = cfx) %>% 
+  gather(measure, value)
+
+p1 <- df_cfx %>% 
+  ggplot(aes(x = value)) + geom_density(aes(colour = measure)) + 
+  ggtitle("PDF of Counterfactual Outcome Distribution")+ 
+  theme(legend.position = "top") + 
+  ggsci::scale_color_aaas(name="")
+
+p2 <- df_cfx %>% 
+  ggplot(aes(x = value)) + stat_ecdf(aes(colour = measure)) + 
+  ggtitle("eCDF of Counterfactual Outcome Distribution") +
+  theme(legend.position = "top") + 
+  ggsci::scale_color_aaas(name = "")
+
+p1 / p2
+
+
+```
+
+We can create an eCDF function object based on the counterfactual distribution as follows:
+
+```{r, echo = TRUE}
+Y1t_cfx <-
+  quantile(Y0t, probs = ecdf(Y0tm1)(Y1tm1), type = 1)
+
+F.treated.t.cf <- # CDF of counterfactual outcome distribution
+  ecdf(Y1t_cfx)
+
+F.treated.t.cf_ <- ecdf(quantile(Y0t, probs = ecdf(Y0tm1)(Y1tm1), type = 1))
+```
+
+### Estimating the Conditional Counterfactual Distribution
+
+```{r}
+F.treated.tmin1 <- ecdf(Y1tm1)
+F.treated.tmin2 <- ecdf(Y1tm2)
+```
+
+We now have the necessary ingredients to estimate the conditional counterfactual distribution $\hat F_{Y_{0t}|Y_{0t-1},X,D=1}$. Our process will proceed as before, with some modifications.
+
+For $\hat F_{Y_{0t}|Y_{0t-1},X,D=1}$, we directly observed how the outcome in the treated group changed from $t-1$ to $t$. That is, we directly observe the joint distribution $(Y_{1t},Y_{1t-1})|D=1$. But we don't have that luxury now. So we have to invoke the **copula stability assumption**, which essentially says that we can learn about the joint distribution $(Y_{0t},Y_{0t-1})|D=1$ from the joint distribution $(Y_{0t-1},Y_{0t-2})|D=1$.
+
+As before we'll iterate over values of `Y1tm1`. But each time we consider a value, we'll map it to its quantile and then find the value in the $t-2$ outcome distribution associated with this quantile.
+
+For example, let's consider the value `r Xvar[50]`. This corresponds to the `r F.treated.tmin1(Xvar[50])` quantile of its distribution. And the value of the `Y1tm2` distribution at this quantile is `r quantile(F.treated.tmin2,probs=F.treated.tmin1(.x), type=1)`.
+
+```{r}
+F.treated.tmin1 <- ecdf(Y1tm1)
+F.treated.tmin2 <- ecdf(Y1tm2)
+Xvar <- # X variable to condition on 
+  Y1tm1[order(Y1tm1)]
+
+shatFY0.logit <- list()
+
+for (x in 1:length(Xvar)) { 
+  
+  .x <- Xvar[x]
+  
+  res <- list()
+  n <- length(Y1t)
+  h <- 1.06*sd(Y1tm2)*n^(-1/4) 
+  
+  # 1. find the quantile in the distribution that .x maps into. 
+  #    F.treated.tmin1(.x)
+  # 2. What value does this quantile correspond to at t-2?
+  
+  .x_ <- quantile(F.treated.tmin2,
+                    probs=F.treated.tmin1(.x), type=1) 
+
+  for (.y in y_) {
+    IY <-  1*(Y1tm1 <= quantile(F.treated.tmin1,
+                                probs=F.treated.t.cf(.y),
+                                type=1))
+    
+    o <-
+      optim(
+        c(0, 0),
+        wll,
+        gr = wgr,
+        y = IY,
+        x = (Y1tm2-.x_),
+        thisx = 0,
+        h = h,
+        control = list(maxit = 1000, reltol = 1e-2),
+        method = "BFGS"
+      )
+    thet <- o$par
+    res[[paste0(.y)]] <- G(thet[1])
+    
+  }
+  hatF <- unlist(res)
+  
+  #Create a smoothed version
+  n.knots = 20
+  dat <-
+        tibble(x = y_, cdf=unlist(res)); head(dat)
+
+    n <- length(dat$x)
+    fit <- scam::scam(cdf ~ s(x, bs = "mpi", k = n.knots), data = dat,
+                      weights = c(n, rep(1, n - 2), 10 * n))
+    ## interior knots
+    xk <- with(fit$smooth[[1]], knots[4:(length(knots) - 3)])
+    ## spline values at interior knots
+    yk <- predict(fit, newdata = data.frame(x = xk))
+    ## reparametrization into a monotone interpolation spline
+    xg <- seq(min(dat$x), max(dat$x), length = 100)
+    f <- stats::splinefun(xk, yk, "hyman")
+    pcdf <- f(y_)
+
+  shatFY0.logit[[paste0(x)]] <- approxfun(y_, f(y_), method = "constant", yleft = 0, yright = 1, f = 0, ties = "ordered")
+  # shatFY0.logit[[x]] <- 
+  #    hatF
+}
+
+# shatFY0.logit_ <- 
+#   shatFY0.logit %>% 
+#           map(~({
+#               BMisc::makeDist(y_, .x, TRUE)
+#           }))
+
+plot(y_,shatFY0.logit[[50]](y_))
+
+
+```
+
+### Estimating the Conditional CDF Using the Counterfactual
+
+```{r}
+# D_ <- quo(treat)
+# Y_ <- quo(learn)
+# t_ <- quo(year)
+# df = displacements
+# resolution = 100
+# model = "logit"
+# 
+
+estimate_conditional_Y0 <- function(df, D, Y, t,resolution = 100, model = "logit") {
+    D_ <- enquo(D)
+    Y_ <- enquo(Y)
+    t_ <- enquo(t)
+    
+    Y0t <- df %>% dplyr::filter({{D_}}==0 & {{t_}}==2011) %>% pull({{Y_}})
+    Y0tm1 <- df %>% dplyr::filter({{D_}}==0 & {{t_}}==2007) %>% pull({{Y_}})
+    Y0tm2 <- df %>% dplyr::filter({{D_}}==0 & {{t_}}==2003) %>% pull({{Y_}})
+    
+    Y1t <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2011) %>% pull({{Y_}})
+    Y1tm1 <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2007) %>% pull({{Y_}})
+    Y1tm2 <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2003) %>% pull({{Y_}})
+    
+    F.treated.tmin1 <- ecdf(Y1tm1)
+    F.treated.tmin2 <- ecdf(Y1tm2)
+    F.treated.t.cf <- ecdf(quantile(Y0t, probs = ecdf(Y0tm1)(Y1tm1), type = 1))
+    
+    range_ <- df %>% pull({{Y_}}) %>% range()
+    y_ <- seq(floor(range_[1]-.1),ceiling(range_[2]+.1),length.out = resolution)
+    
+    pb <- progress_bar$new(total = length(Y1tm1))
+    
+    condF <- Y1tm1[order(Y1tm1)] %>% 
+        map(~({
+            pb$tick()
+            n <- length(Y1t)
+            # xtmin1 <- quantile(ddid$F.treated.tmin2,
+            #                    probs=ddid$F.treated.tmin1(.x), type=1)
+            xtmin1 <- quantile(F.treated.tmin2,
+                                probs=F.treated.tmin1(.x), type=1)            
+            X <- cbind(1, Y1tm2-xtmin1)
+            h <- 1.06*sd(Y1tm2)*n^(-1/4) ## check that this is right  
+            
+            K <- diag(k(Y1tm2-xtmin1, h), n, n)
+            
+            y_ %>% map_dbl(~({
+                
+                if (model == "GAM") {
+                    
+                    Z <- 1*(Y1tm1 <= quantile(F.treated.tmin1,
+                                              probs=F.treated.t.cf(.x),
+                                              type=1))
+                    dat <- cbind.data.frame(Z,X) %>% 
+                        set_names(c("Z","cons","X"))
+                    fit <- gam(Z ~ s(X), data = dat, family = "binomial")
+                    
+                    predict(fit,  newdata = data.frame(X=0),type = "response") %>% mean()
+                    
+                    
+                } else if (model == "logit") {
+                    Z <- 1*(Y1tm1 <= quantile(F.treated.tmin1,
+                                      probs=F.treated.t.cf(.x),
+                                      type=1))
+                    o <- optim(c(0,0), wll, gr=wgr, y=Z, x=(Y1tm2-xtmin1), thisx=0, h=h,
+                               control=list(maxit=1000, reltol=1e-2),
+                               method="BFGS")
+                    thet <- o$par
+                    G(thet[1])
+                }
+            }))
+        })) %>% 
+        set_names(paste0(Y1tm1[order(Y1tm1)]))
+    
+      condF_ <- 
+          condF %>% 
+          map(~({
+              BMisc::makeDist(y_, .x, TRUE)
+          }))
+    return(condF_)
+}
+
+
+hatFY0 <- 
+  displacements %>% 
+    estimate_conditional_Y0(df = ., D = treat, Y = learn, t = year , resolution = 100, model = "logit")
+#points(y_,hatFY0[[50]](y_),col="blue")
+
+```
+
+```{r}
+# hatFY1_ <- hatFY1
+# hatFY0_ <- hatFY0
+
+# hatFY1 <- shatFY1.logit
+# hatFY0 <- shatFY0.logit
+
+```
+
+## Construct the Bounds
+
+```{r}
+delta_ <- seq(-4,4,length.out = 100)
+Y1tm1_ <- displacements %>% dplyr::filter(treat==1 & year == 2007) %>% pull(learn)
+Y1tm1_ <- Y1tm1_[order(Y1tm1_)]
+
+l_ <- 
+    delta_ %>% map(~{ # outer loop is over possible treatment effects
+    delt <- .x
+    Y1tm1 %>%   # middle loop is over observed values of the outcome among the treated at t-1
+        map(~({
+            ytmin1 <- .x
+            y_ %>% # inner loop is over the support of the outcome (since each conditional CDF covers this full support)
+                map_dbl(~({
+                    y <- .x
+                    i <- which(Y1tm1_ ==ytmin1)[1]
+                    max( hatFY1[[i]](y) - hatFY0[[i]](y-delt),0) # Lemma 3
+                }))
+        })) %>% 
+        map_dbl(~({max(.x)}))  %>% # sup in lemma 3
+        mean(.)
+    
+    }) %>% 
+    unlist()
+
+u_ <- 
+    delta_ %>% map(~{ # outer loop is over possible values of the treatment effect
+      delt <- .x
+        Y1tm1 %>% # middle loop is over observed outcome values among treated at t-1
+            map(~({
+                ytmin1 = .x
+                y_ %>%  # inner loop is over the support of y
+                    map_dbl(~({
+                        y = .x
+                        i = which(Y1tm1_ == ytmin1)[1]
+                        1 + min((hatFY1[[i]](y) - hatFY0[[i]](y-delt)),0) # lemma 3
+                    })) 
+            })) %>% 
+            map_dbl(~(min(.x))) %>% # inf in lemma 3
+            mean(.)
+    }) %>% 
+    unlist()
+
+F.l <- BMisc::makeDist(delta_, l_)
+F.u <- BMisc::makeDist(delta_, u_)
+```
+
+```{r}
+
+
+# Williamson, R. C. and T. Downs (1990), “Probabilistic arithmetic. I. numerical methods for calculating convolutions and dependency bounds.” International Journal of Approximate Reasoning, 4 (2), 89–158. ISSN 0888-613X. Available at http://dx.doi.org/10.1016/0888-613X(90)90022-T.
+# 
+# # 
+Ywd1 <- displacements %>% filter(treat==1 & year==2011) %>% pull(learn) %>% ecdf()
+Ywd0 <- ecdf(Y1t_cfx)
+
+l_wd_ <-
+  delta_ %>% map(~{ # outer loop is over possible values of the treatment effect
+    delta <- .x
+    y_ %>% # inner loop is over values of y
+      map_dbl(~{
+        y <- .x
+        (Ywd1(y) - Ywd0(y-delta)) %>% max(.,0)
+      })
+  }) %>% 
+  map_dbl(~(max(.)))
+
+
+u_wd_ <-
+  delta_ %>% map(~{ # outer loop is over possible values of the treatment effect
+    delta <- .x
+    y_ %>% # inner loop is over values of y
+      map_dbl(~{
+        y <- .x
+       (Ywd1(y) - Ywd0(y-delta)) %>% min(.,0)
+      })
+  }) %>% 
+  map_dbl(~(min(.))) %>% 
+  {1 + .}
+
+cc <- qte::CiC(learn ~ treat,
+                t=2011, tmin1=2007, tname="year",
+                idname="id", panel=TRUE, data=displacements,
+                probs=seq(.05,.95,.01),se=FALSE)
+    cc$F.treated.tmin2 <- ecdf(subset(displacements, year==2003 & treat==1)$learn)
+    cc$F.treated.tmin1 <- ecdf(subset(displacements, year==2007 & treat==1)$learn)
+
+# wd.l.vec <- vapply(delta_, wd.l, 1.0, y_, Y1t, cc)
+# wd.u.vec <- vapply(delta_, wd.u, 1.0, y_, Y1t, cc)
+
+```
+
+```{r}
+wd.l.vec = l_wd_
+wd.u.vec = u_wd_
+
+F.wd.l <- BMisc::makeDist(delta_, wd.l.vec)
+F.wd.u <- BMisc::makeDist(delta_, wd.u.vec)    
+```
+
+```{r}
+fl_F0 <-
+    delta_ %>% map(~({
+        .t = .x
+         y_ %>% map_dbl(~({
+             .y = .x
+             
+             ## F0
+             IY <- as.integer(Y0t <= .y)
+             X <- matrix(1, nrow = length(Y0t))
+             dat <-
+                 cbind.data.frame(IY = IY, cons = X)
+             fit <-
+                 glm(IY ~ cons - 1, data = dat, family = "binomial")
+             
+             F0 <- predict(fit, type = "response") %>% mean()
+             F0
+         })) 
+    })) %>% 
+    set_names(paste0(delta_)) %>% 
+    map(~(BMisc::makeDist(y_, .)))
+
+fl_F1 <-
+    delta_ %>% map(~({
+        .t = .x
+        y_ %>% map_dbl(~({
+            .y = .x
+            
+            ## F0
+            IY <- as.integer(Y1t <= (.y + .t))
+            X <- matrix(1, nrow = length(Y1t))
+            dat <-
+                cbind.data.frame(IY = IY, cons = X)
+            fit <-
+                glm(IY ~ cons - 1, data = dat, family = "binomial")
+            
+            F1 <- predict(fit, type = "response") %>% mean()
+            F1
+        })) 
+    })) %>% 
+    set_names(paste0(delta_)) %>% 
+    map(~(BMisc::makeDist(y_, .)))
+
+fl_Fl <- 
+    delta_ %>% map(~{ # outer loop is over possible values of the treatment effect
+        delt <- .x
+        Y0t %>% # middle loop is over observed outcome values among untreated
+            map_dbl(~({
+                y0_ = .x 
+                d = which(names(fl_F1)==paste0(delt)); d
+                (fl_F1[[d]](y0_)-fl_F0[[d]](y0_))/(1-fl_F0[[d]](y0_))
+            }))  %>% 
+            map_dbl(~(max(0,.x))) %>% 
+            mean(.)
+    }) %>% 
+    unlist()
+
+
+fl_Fu <- 
+    delta_ %>% map(~{ # outer loop is over possible values of the treatment effect
+        delt <- .x
+        Y0t %>% # middle loop is over observed outcome values among untreated
+            map_dbl(~({
+                y0_ = .x 
+                d = which(names(fl_F1)==paste0(delt)); d
+                (fl_F1[[d]](y0_))/(fl_F0[[d]](y0_))
+            }))  %>% 
+            map_dbl(~(min(1,.x))) %>% 
+            mean(.)
+    }) %>% 
+    unlist()
+
+F.fl.l <- BMisc::makeDist(delta_, fl_Fl)
+F.fl.u <- BMisc::makeDist(delta_, fl_Fu)   
+
+plot(delta_, F.fl.l(delta_))
+points(delta_, F.fl.u(delta_))
+```
+
+```{r}
+csaboundsobj <- list(F.l=F.l, F.u=F.u, F.wd.l=F.wd.l, F.wd.u=F.wd.u, F.fl.u = F.fl.u, F.fl.l = F.fl.l)
+```
+
+```{r}
+### PLOT BOUNDS ON THE QUANTILE OF THE TREATMENT EFFECTS
+
+tau=seq(.05,.95,.05)
+wdbounds=TRUE
+
+tau <- seq(0.05, 0.95, .05)
+c <- csaboundsobj
+
+qu <- quantile(c$F.l, tau, type=1)
+ql <- quantile(c$F.u, tau, type=1)
+qwdu <- quantile(c$F.wd.l, tau, type=1)
+qwdl <- quantile(c$F.wd.u, tau, type=1)
+qflu <- quantile(F.fl.l, tau, type=1)
+qfll <- quantile(F.fl.u, tau, type=1)
+
+
+cmat <- data.frame(tau=tau, qu=qu, ql=ql, group="CSA Bounds")
+cmat2 <- data.frame(tau=tau, qu=qwdu, ql=qwdl, group="WD Bounds")
+cmat3 <- data.frame(tau=tau, qu=qflu, ql=qfll, group="FL Bounds")
+
+cmat <- rbind.data.frame(cmat2, cmat,cmat3)
+
+# cb <- csa.bounds(learn ~ treat, 2011, 2007, 2003, "year", "id",
+#         displacements, delta_, y_, cc,
+#         method="level", cl=1)
+# 
+cmat_ <- cmat
+# cmat_ <-
+#   cmat %>%
+#   bind_rows(ggCSABounds(cb) %>% ggplot_build() %>% pluck("data") %>% pluck(1) %>%
+#   dplyr::select(tau = x, ql = y ) %>%
+#   mutate(group = 'test'))
+
+p <- ggplot(data=cmat_) +
+    geom_line(aes(x=tau, y=qu, color=factor(group)), size=1) +
+    geom_line(aes(x=tau, y=ql, color=factor(group)), size=1) +
+    scale_x_continuous(limits=c(0,1)) + 
+    theme_bw() +
+    theme(legend.title=element_blank())
+p +
+  ggsci::scale_color_aaas() 
+
+```
+
+```{r, eval = FALSE}
+
+# test
+
+delt.seq =seq(-4,4,length.out=50)
+df <- displacements
+D_ <- quo(treat)
+Y_ <- quo(learn)
+t_ <- quo(year)
+
+Y1t <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2011) %>% pull({{Y_}})
+Y1tm1 <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2007) %>% pull({{Y_}})
+Y1tm2 <- df %>% dplyr::filter({{D_}}==1 & {{t_}}==2003) %>% pull({{Y_}})
+
+range_ <- df %>% pull({{Y_}}) %>% range()
+resolution = 100
+y_ <- seq(floor(range_[1]-.1),ceiling(range_[2]+.1),length.out = resolution)
+    
+F.y1 <- hatFY1
+F.y0 <- hatFY0
+
+ytmin1.seq <- Y1tm1
+ytmin1.seq <- ytmin1.seq[order(ytmin1.seq)]
+
+cc <- qte::CiC(learn ~ treat,
+                t=2011, tmin1=2007, tname="year",
+                idname="id", panel=TRUE, data=displacements,
+                probs=seq(.05,.95,.01),se=FALSE)
+    cc$F.treated.tmin2 <- ecdf(subset(displacements, year==2003 & treat==1)$learn)
+    cc$F.treated.tmin1 <- ecdf(subset(displacements, year==2007 & treat==1)$learn)
+
+l.vec_ <-
+    delt.seq %>% map(~(
+        l(.x,
+          y.seq=y_,
+          ytmin1.seq=ytmin1.seq,
+          Y1t=Yt1,
+          Y0tmin1=Y1tm1,
+          Y0tmin2=Y1tm2,
+          Y0tqteobj=cc,
+          F.y1=hatFY1_,
+          F.y0=hatFY0_)
+    ))
+
+l.vec_ <- unlist(l.vec_)
+
+# Y0tmin1=Y1tm1
+# Y0tmin2=Y1tm2
+
+l.vec <- 
+    delt.seq %>% map(~{
+    delt <- .x
+    Y1tm1 %>% 
+        map(~({
+            ytmin1 <- .x
+            y_ %>% 
+                map_dbl(~({
+                    y <- .x
+                    i <- which(ytmin1.seq==ytmin1)[1]
+                    max(F.y1[[i]](y) - F.y0[[i]](y-delt),0)
+                }))
+        })) %>% 
+        map_dbl(~({max(.x)}))  %>% 
+        mean(.)
+    
+    }) %>% 
+    unlist()
+    
+# u.vec <- pbapply::pblapply(delt.seq, u, y.seq, ytmin1.seq,
+#                            Y1t, Y0tmin1r, Y0tmin2, Y0tqteobj,
+#                            F.y1, F.y0, cl=cl)
+
+u.vec_ <- delt.seq %>% map(~({
+    u(.x,
+      y.seq=y_,
+      ytmin1.seq = ytmin1.seq,
+      Y1t = Y1t,
+      Y0tmin1=Y1tm1,
+      Y0tmin2 = Y1tm2,
+      Y0tqteobj = cc,
+      F.y1 = F.y1,
+      F.y0 = F.y0)
+}))
+
+u.vec_ <- unlist(u.vec_)
+
+u.vec <- 
+    delt.seq %>% map(~{
+      delt <- .x
+        Y1tm1 %>% 
+            map(~({
+                ytmin1 = .x
+                y_ %>% 
+                    map_dbl(~({
+                        y = .x
+                        i = which(ytmin1.seq==ytmin1)[1]
+                        1 + min((F.y1[[i]](y) - F.y0[[i]](y-delt)),0)
+                    })) 
+            })) %>% 
+            map_dbl(~(min(.x))) %>% 
+            mean(.)
+    }) %>% 
+    unlist()
+
+F.l <- BMisc::makeDist(delt.seq, l.vec)
+F.u <- BMisc::makeDist(delt.seq, u.vec)
+
+wd.l.vec <- vapply(delt.seq, wd.l, 1.0, y_, Y1t, cc)
+wd.u.vec <- vapply(delt.seq, wd.u, 1.0, y_, Y1t, cc)
+
+F.wd.l <- BMisc::makeDist(delt.seq, wd.l.vec)
+F.wd.u <- BMisc::makeDist(delt.seq, wd.u.vec)    
+
+csaboundsobj <- list(F.l=F.l, F.u=F.u, F.wd.l=F.wd.l, F.wd.u=F.wd.u)
+
+
+### PLOT
+
+tau=seq(.05,.95,.05)
+wdbounds=TRUE
+otherdist1=NULL
+otherdist2=NULL
+
+tau <- seq(0.05, 0.95, .05)
+c <- csaboundsobj
+
+qu <- quantile(c$F.l, tau, type=1)
+ql <- quantile(c$F.u, tau, type=1)
+qwdu <- quantile(c$F.wd.l, tau, type=1)
+qwdl <- quantile(c$F.wd.u, tau, type=1)
+
+cmat <- data.frame(tau=tau, qu=qu, ql=ql, group="CSA Bounds")
+cmat2 <- data.frame(tau=tau, qu=qwdu, ql=qwdl, group="WD Bounds")
+if (wdbounds) {
+    cmat <- rbind.data.frame(cmat2, cmat)
+}
+if (!is.null(otherdist1)) {
+    cmat3 <- data.frame(tau=tau, qu=quantile(otherdist1, tau, type=1),
+                        ql=ql, group="CS PPD")
+    cmat <- rbind.data.frame(cmat3, cmat)
+}
+if (!is.null(otherdist2)) {
+    cmat4 <- data.frame(tau=tau, qu=quantile(otherdist2, tau, type=1),
+                        ql=ql, group="Panel PPD")
+    cmat <- rbind.data.frame(cmat4, cmat)
+}
+
+
+cb <- csa.bounds(learn ~ treat, 2011, 2007, 2003, "year", "id",
+        displacements, delt.seq, y_, cc,
+        method="level", cl=1)
+
+
+
+
+cmat_ <- 
+  cmat %>%
+  bind_rows(ggCSABounds(cb) %>% ggplot_build() %>% pluck("data") %>% pluck(1) %>% 
+  dplyr::select(tau = x, ql = y ) %>% 
+  mutate(group = 'test')) 
+
+p <- ggplot(data=cmat_) +
+    geom_line(aes(x=tau, y=qu, color=factor(group)), size=1) +
+    geom_line(aes(x=tau, y=ql, color=factor(group)), size=1) +
+    scale_x_continuous(limits=c(0,1)) + 
+    theme_bw() +
+    theme(legend.title=element_blank())
+
+
+
+
+
+
+
+```
+
+## Fransen and Lefgren

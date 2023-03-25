@@ -1,11 +1,14 @@
 ---
-title: "vchem-website"
+title: "Main Website"
+format: 
+  html:
+    link-external-newwindow: true
+editor_options: 
+  chunk_output_type: console
+filters:
+   - lightbox
+lightbox: auto
+bibliography: references.bib
 ---
 
-This is a Quarto website.
-
-To learn more about Quarto websites visit <https://quarto.org/docs/websites>.
-
-```{r}
-1 + 1
-```
+[DOIs for blog posts](https://blog.datacite.org/schema-org-register-dois/)

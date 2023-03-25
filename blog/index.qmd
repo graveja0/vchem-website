@@ -1,0 +1,19 @@
+---
+listing:
+  contents: posts
+  sort: "date desc"
+  type: grid
+  categories: true
+  sort-ui: false
+  filter-ui: false
+page-layout: full
+title-block-banner: true
+---
+
+::: hero-banner
+::: content-block
+# Welcome
+
+The Vanderbilt Center for Health Economic Modeling was launched in 2020 to harness the diverse, internationally-recognized expertise of Vanderbilt researchers in modeling the health and economic consequences of health policy and technology changes worldwide.
+:::
+:::

@@ -1,0 +1,561 @@
+---
+title: "Bounds Under Exogenous Treatment Assignment"
+subtitle: "Extending the Policy Evaluation Toolkit"
+author: John Graves
+date: "2022-12-19"
+categories: [Partial Identification, Causal Inference]
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: false
+  message: false
+  warning: false  
+  code-fold: true
+  cache: true
+bibliography: "../../../references.bib"
+reference-location: margin
+self-contained: true
+image: "media/sampling-figure.png"
+---
+
+```{r setup, cache = FALSE}
+library(tidyverse)
+library(here)
+library(glue)
+library(MASS)
+library(scam)
+library(patchwork)
+library(hrbrthemes)
+library(directlabels)
+library(progress)
+library(ggsci)
+library(mgcv)
+library(knitr)
+library(kableExtra)
+select <- dplyr::select
+options("scipen"=100, "digits"=6)
+
+theme_set(hrbrthemes::theme_ipsum())
+```
+
+# Data Generation Process
+
+```{r}
+#| code-fold: true
+#| echo: true
+#| label: tbl-data
+#| tbl-cap: First 10 rows of data 
+
+params <- 
+  list(
+    N = 2e3,
+    sigma_sq_X = 1.0,
+    sigma_sq_epsilon = 0.3,
+    delta = 0.5
+  )
+params <- with(params,
+               modifyList(params,list(
+                 r_squared = 1 - sigma_sq_epsilon,
+                 beta = sqrt(1 - sigma_sq_epsilon),
+                 Sigma = matrix(c(sigma_sq_X,0,0,sigma_sq_epsilon),
+                                byrow=TRUE, nrow = 2, ncol = 2))))
+
+gen_data <- function(params) {
+  with(params, 
+       mvrnorm(n = N, mu = c(0,0), Sigma = Sigma)) %>% 
+    data.frame() %>% 
+    as_tibble() %>% 
+    set_names(c("X","epsilon")) %>% 
+    mutate(Y_i0 = params$beta * X + epsilon) %>% 
+    mutate(Y_i1 = Y_i0 + params$delta) %>% 
+    mutate(random = runif(nrow(.))) %>% 
+    mutate(D = as.integer(row_number()<=(params$N)/2)) %>% 
+    arrange(random) %>% 
+    select(-random) %>% 
+    mutate(Y = D * Y_i1 + (1 - D) * Y_i0) %>% 
+    select(Y,D,X)
+}
+
+set.seed(123)
+df <- params %>% gen_data()
+
+df %>% head(n=10) %>% kable() %>% 
+    kable_styling()
+```
+
+# Prepare the Data
+
+Let's define some useful objects:
+
+```{r}
+#| code-fold: false
+#| echo: true
+
+y1 <- # Vector of treated outcomes
+    df %>% filter(D==1) %>% pull(Y)
+F1 <- # Empirical CDF of treated outcome vector
+    ecdf(y1)
+
+y0 <- # Vector of untreated outcomes
+    df %>% filter(D==0) %>% pull(Y)
+F0 <- # Empirical CDF of untreated outcome vector
+    ecdf(y0)
+
+delta_ <- # Vector of hypothetical treatment effects
+    seq(-20, 20, length.out =1000)
+y_ <- # Vector of the support of the outcome, with 100 evenly-spaced values along it. 
+    seq(floor(min(y0,y1))-1,ceiling(max(y0,y1))+1, length.out = 1000)
+
+tau <-  # Quantiles of the treatment effect distribution to obtain 
+    seq(.05,.95,.01)
+
+```
+
+# Worst-Case Bounds
+
+This section will construct worst-case bounds based on Williamson and Downs (1990).
+
+$\begin{aligned} & F_{\Delta}^L(t)=\sup _y \max \left\{F_1(y)-F_0(y-t), 0\right\}, \\ & F_{\Delta}^U(t)=1+\inf _y \min \left\{F_1(y)-F_0(y-t), 0\right\}\end{aligned}$
+
+```{r}
+#| code-fold: false
+#| echo: true
+
+F_l_wd_ <- # <1>
+  delta_ %>% map(~{ # Outer loop is over possible values of the treatment effect
+    delta <- .x
+    y0 %>% # Inner loop is over y0
+      map_dbl(~{
+        y <- .x
+        (F1(y) - F0(y-delta)) %>% max(.,0)
+      })
+  }) %>% 
+  map_dbl(~(max(.))) # sup in formula
+
+# Turn it into an eCDF object
+  F.wd.l <- approxfun(delta_,  F_l_wd_, method = "constant", yleft = 0, yright = 1,  # <2>
+            f = 0, ties = "ordered")
+  class(F.wd.l) <- c("ecdf", "stepfun", class(F.wd.l))
+  assign("nobs", length(delta_), envir = environment(F.wd.l))
+
+F_u_wd_ <- # <3>
+  delta_ %>% map(~{ # Outer loop is over possible values of the treatment effect
+    delta <- .x
+    y0 %>% # Inner loop is over y0
+      map_dbl(~{
+        y <- .x
+        (F1(y) - F0(y-delta)) %>% min(.,0)
+      })
+  }) %>% 
+  map(~(min(.))) %>% # inf in formula
+  map_dbl(~(1+.x)) # add one per formula
+
+# Turn it into an eCDF object
+  F.wd.u <- approxfun(delta_,  F_u_wd_, method = "constant", yleft = 0, yright = 1,  # <4>
+                      f = 0, ties = "ordered")
+  class(F.wd.u) <- c("ecdf", "stepfun", class(F.wd.u))
+  assign("nobs", length(delta_), envir = environment(F.wd.u))
+
+```
+1. Calculate the lower bound values
+2. This code turns the lower bound quantile values into an empirical CDF object. 
+3. Calculate the upper bound values
+4. This code turns the lower bound quantile values into an empirical CDF object. 
+
+Now let's look at the bounds for the quantile of the Treated Effect on the Treated (QoTT), i.e., the bounds on various quantiles of the treatment effect distribution.
+
+```{r wdbounds}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-wd
+#| fig-cap: Worst-Case (Williamson and Downs [1990]) Bounds
+#| fig-width: 10
+#| fig-height: 8
+
+qwdu <- quantile(F.wd.l, tau, type=1)
+qwdl <- quantile(F.wd.u, tau, type=1)
+
+df_wd <- 
+  data.frame(tau = c(tau,tau), bound = c(qwdu,qwdl), type=c(rep("upper",length(qwdu)),rep("lower",length(qwdl)))) %>% 
+  mutate(method ="Worst-Case\n[Williamson-Downs (1990)]") %>% 
+  mutate(label = ifelse(type=="upper","Worst-Case\n[Williamson-Downs (1990)]","")) 
+
+col_scheme <- c("#FF5733" ) # Williamson and Downs
+
+df_wd %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
+  geom_line(lwd=1.25) + 
+  geom_hline(aes(yintercept = params$delta), colour = "darkred",lwd=1.25) + 
+  scale_color_manual(values = col_scheme) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none") +
+  annotate("text",x = 0.5, y = params$delta, label = "True Treatment Effect",vjust=-1,colour = "darkred") + 
+  scale_y_continuous(limits = c(-5,5),breaks = seq(-5,5,1))
+```
+
+# Bounds Under Stochastic Increasingness
+
+Frandsen and Lefgrens (2021)
+
+$\begin{aligned} & \hat{F}_{\Delta \mid 0}^L(t \mid Y(0)=y):=\max \left\{0, \frac{\hat{F}_1(y+t)-\hat{F}_0(y)}{1-\hat{F}_0(y)}\right\} \\ & \hat{F}_{\Delta \mid 0}^U(t \mid Y(0)=y):=\min \left\{1, \frac{\hat{F}_1(y+t)}{\hat{F}_0(y)}\right\} .\end{aligned}$
+
+$\begin{aligned} & \Delta^L(Y(d))=\int t d F_{\Delta \mid Y(d)}^U(t \mid Y(d)) \\ & \Delta^U(Y(d))=\int t d F_{\Delta \mid Y(d)}^L(t \mid Y(d))\end{aligned}$
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-bounds1
+#| fig-cap: Treatment Effect Distribution Bounds
+#| fig-width: 10
+#| fig-height: 8
+#| 
+i1 <- # Index of treated observations
+  df %>% 
+  mutate(i = row_number()) %>% 
+  filter(D==1) %>% 
+  pull(i)
+
+i0 <- # index of untreated observations
+  df %>% 
+  mutate(i = row_number()) %>% 
+  filter(D==0) %>% 
+  pull(i)
+
+
+F0_fl <-# ecdf for untreated defined across the support of y
+  y_ %>% map_dbl(~({
+    .y = .x
+    mean(df$Y[i0] <= .y)
+  })) %>% BMisc::makeDist(y_, .)
+
+
+F1_fl <-# ecdf for treated defined across the support of y
+  y_ %>% map_dbl(~({
+    .y = .x
+    mean(df$Y[i1] <= .y )
+  })) %>% BMisc::makeDist(y_, .)
+
+# Construct bounds
+pb <- progress_bar$new(total = length(delta_))
+F_l_fl_ <- # Lower bound
+  delta_ %>% map(~{ # outer loop is over possible values of the treatment effect
+    delt <- .x
+    pb$tick()
+    y0 %>% # inner loop is over observed outcome values among untreated
+      map_dbl(~({
+        y0_ = .x 
+        (F1_fl(y0_ + delt)-F0_fl(y0_))/(1-F0_fl(y0_))
+      }))  %>% 
+      map_dbl(~(max(0,.x,na.rm=TRUE))) %>% 
+      mean(.)
+  }) %>% 
+  unlist()
+
+pb <- progress_bar$new(total = length(delta_))
+F_u_fl_ <-  # Upper bound
+  delta_ %>% map(~{ # outer loop is over possible values of the treatment effect
+    delt <- .x
+    pb$tick()
+    y0 %>% # inner loop is over observed outcome values among untreated 
+      map_dbl(~({
+        y0_ = .x 
+        (F1_fl(y0_+delt))/(F0_fl(y0_))
+      }))  %>% 
+      map_dbl(~(min(1,.x,na.rm=TRUE))) %>% 
+      mean(.)
+  }) %>% 
+  unlist()
+
+
+# Convert into an ECDF
+F.fl.l <- approxfun(delta_,  F_l_fl_, method = "constant", yleft = 0, yright = 1, 
+                    f = 0, ties = "ordered")
+class(F.fl.l) <- c("ecdf", "stepfun", class(F.fl.l))
+assign("nobs", length(delta_), envir = environment(F.fl.l))
+
+F.fl.u <- approxfun(delta_,  F_u_fl_, method = "constant", yleft = 0, yright = 1, 
+                    f = 0, ties = "ordered")
+class(F.fl.u) <- c("ecdf", "stepfun", class(F.fl.u))
+assign("nobs", length(delta_), envir = environment(F.fl.u))
+
+# Get the values for each quantile via the inverse CDF
+qflu <- quantile(F.fl.l, tau, type=1)
+qfll <- quantile(F.fl.u, tau, type=1)
+
+
+df_fl <- # Collect results into a data frame
+  data.frame(tau = c(tau,tau), bound = c(qflu,qfll), type=c(rep("upper",length(qflu)),rep("lower",length(qfll)))) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)") %>% 
+  mutate(label = ifelse(type=="upper","Frandsen & Lefgrens (2021)\nNo Covariates","")) 
+
+
+## Plot the results
+
+col_scheme <- c("#0A2E36" ,# Frandsen & Lefgrens (No X)
+                "#FF5733" ) # Williamson and Downs
+
+df_fl %>% 
+  bind_rows(df_wd) %>% 
+    mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
+  geom_line(lwd = 1.25) + 
+  geom_hline(aes(yintercept = params$delta), colour = "darkred",lwd=1.25) + 
+  scale_color_manual(values = col_scheme) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none") +
+  annotate("text",x = 0.5, y = params$delta, label = "True Treatment Effect",vjust=-1,colour = "darkred") + 
+  scale_y_continuous(limits = c(-5,5),breaks = seq(-5,5,1))
+```
+
+## Incorporating Covariates
+
+$F_{\Delta \mid Y(0), X}^L(t \mid Y(0), X):= \begin{cases}0, & Y(0)+t<\tilde{Y}(1 \mid X), \\ \frac{F_{1 \mid X}(Y(0)+t \mid X)-F_{0 \mid X}(Y(0) \mid X)}{1-F_{0 \mid X}(Y(0) \mid X)}, & Y(0)+t \geq \tilde{Y}(1 \mid X),\end{cases}$
+
+$F_{\Delta \mid Y(0), X}^U(t \mid Y(0), X):= \begin{cases}\frac{F_{1 \mid X}(Y(0)+t \mid X)}{F_{0 \mid X}(Y(0) \mid X)}, & Y(0)+t \leq \tilde{Y}(1 \mid X) \\ 1, & Y(0)+t \geq \tilde{Y}(1 \mid X)\end{cases}$
+
+$\begin{aligned} & F_{\Delta \mid Y(d)}^L(t \mid Y(d))=E\left[F_{\Delta \mid Y(d), X}^L(t \mid Y(d), X) \mid Y(d)\right] \\ & F_{\Delta \mid Y(d)}^U(t \mid Y(d))=E\left[F_{\Delta \mid Y(d), X}^U(t \mid Y(d), X) \mid Y(d)\right]\end{aligned}$
+
+$\begin{aligned} & \Delta^L(Y(d))=\int t d F_{\Delta \mid Y(d)}^U(t \mid Y(d)) \\ & \Delta^U(Y(d))=\int t d F_{\Delta \mid Y(d)}^L(t \mid Y(d))\end{aligned}$
+
+$\begin{aligned} & \hat{F}_{\Delta \mid 0, X}^L\left(t \mid Y_j(0), X_j\right):=\max \left\{0, \frac{\hat{F}_{1 \mid X}\left(Y_j(0)+t \mid X_j\right)-\hat{F}_{0 \mid X}\left(Y_j(0) \mid X_j\right)}{1-\hat{F}_{0 \mid X}\left(Y_j(0) \mid X_j\right)}\right\} \\ & \hat{F}_{\Delta \mid 0, X}^U\left(t \mid Y_j(0), X_j\right):=\min \left\{1, \frac{\hat{F}_{1 \mid X}\left(Y_j(0)+t \mid X_j\right)}{\hat{F}_{0 \mid X}\left(Y_j(0) \mid X_j\right)}\right\} .\end{aligned}$
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: false
+
+i1 <-  # index of treated observations
+  df %>% 
+  mutate(i = row_number()) %>% 
+  filter(D==1) %>% 
+  pull(i)
+
+i0 <-  # index of untreated observations
+  df %>% 
+  mutate(i = row_number()) %>% 
+  filter(D==0) %>% 
+  pull(i)
+
+X1 <- # X values of treated observations
+  df %>%
+  filter(D==1) %>%
+  pull(X)
+
+X0 <- # X values of untreated observations
+  df %>% 
+  filter(D==0) %>% 
+  pull(X)
+```
+
+We next create conditional CDFs, with a different CDF constructed for each untreated group $X$ value.
+
+The short way uses parametric quantile regression (`rq()`). This specification assumes a model that is linear in parameters.
+
+```{r}
+#| code-fold: false
+#| echo: true
+
+taus0 <- sort(ecdf(y0)(y0))
+quantreg_fit <- quantreg::rq(Y ~ X, tau = taus0, data = df %>% filter(D==0))
+pvals <- predict(quantreg_fit,newdata = data.frame(X=X0), stepfun=TRUE)
+hatF0X <- pvals %>% map(~(.x(taus0))) %>% 
+  map(~(BMisc::makeDist(.x,taus0)))
+
+
+taus1 <- sort(ecdf(y1)(y1))
+quantreg_fit <- quantreg::rq(Y ~ X, tau = taus0, data = df %>% filter(D==1))
+pvals <- predict(quantreg_fit,newdata = data.frame(X=X0), stepfun=TRUE)
+hatF1X <- pvals %>% map(~(.x(taus0))) %>% 
+  map(~(BMisc::makeDist(.x,taus0)))
+
+```
+
+A (much) longer, but nonparametric approach, is to fit a nonparametric regression. In this example code, we fit a *generalized additive model* (GAM) with a logit link (for the constructed binary outcome needed to estimate the CDF).[Note that the treatment effect bounds calcualted under a GAM vs. a parametric quantile regression approach for the condtiional CDFs are nearly identical in this example---though this will not generally be true!]{.aside}
+
+```{r, eval = FALSE}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+
+# This version constructs a full CDF for each X value
+pb <- progress_bar$new(total = length(y0))
+hatF0X <-
+  map(X0, ~({
+    # for each untreated observation j
+    xx = .x
+    pb$tick()
+    hatF0X_ <-
+      y_ %>% map_dbl( ~({
+        yy = .x
+        # nonparameterically regress an indicator Y_i <= Y_j on X_i in the untreated subsample
+        IY = as.integer(df$Y[i0] <= yy)
+        X <- X0
+        dat <- cbind.data.frame(IY, X) %>%
+          set_names(c("IY", "X"))
+        
+        fit <- gam(IY ~ s(X), data = dat, family = "binomial")
+        # construct predicted value
+        predict(fit, newdata = data.frame(X = xx), type = "response")
+        
+      })) %>%
+      BMisc::makeDist(y_, .) # make this into an ecdf 
+    
+    hatF0X_
+  }))
+write_rds(hatF0X,"posts/extending-the-toolkit-experimental/results/hatF0X.rds")
+
+pb <- progress_bar$new(total = length(X0))
+hatF1X <-
+  map(X0, ~ ({
+    # for each untreated observation j
+    xx = .x
+    pb$tick()
+    hatF1X_ <-
+      y_ %>% map_dbl( ~ ({
+        yy = .x
+        # nonparameterically regress an indicator Y_i <= Y_j on X_i in the treated subsample
+        IY = as.integer(df$Y[i1] <= yy)
+        X <- X1
+        dat <- cbind.data.frame(IY, X) %>%
+          set_names(c("IY", "X"))
+        
+        fit <- gam(IY ~ s(X), data = dat, family = "binomial")
+        # construct predicted value
+        predict(fit, newdata = data.frame(X = xx), type = "response")
+        
+      })) %>%
+      BMisc::makeDist(y_, .) # make this into an ecdf
+    hatF1X_
+  }))
+write_rds(hatF1X,"posts/extending-the-toolkit-experimental/results/hatF1X.rds")
+```
+
+```{r, echo = FALSE, eval = FALSE}
+#| echo: false
+#| message: false
+#| warning: false
+#| code-fold: true
+#| 
+#hatF0X <- read_rds("posts/extending-the-toolkit-experimental/results/hatF0X.rds")
+#hatF1X <- read_rds("posts/extending-the-toolkit-experimental/results/hatF1X.rds")
+hatF0X <- read_rds("results/hatF0X.rds")
+hatF1X <- read_rds("results/hatF1X.rds")
+```
+
+We next plug these condtiional CDFs into the formulas to obtain the CDF of the treatment effect bounds.
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+
+pb <- progress_bar$new(total = length(delta_))
+F_l_flX_ <- 
+  delta_ %>% map(~{ # outer loop is over possible values of the treatment effect
+    delt <- .x
+    pb$tick()
+      map2_dbl(y0,X0,~({
+        y0_ = .x 
+        xx_ = .y
+        i = which(X0==xx_); i
+        F1_fl_tmp <- hatF1X[[i]]
+        F0_fl_tmp <- hatF0X[[i]]
+        (F1_fl_tmp(y0_ + delt)-F0_fl_tmp(y0_))/(1-F0_fl_tmp(y0_))
+      }))  %>% 
+      map_dbl(~(max(0,.x,na.rm=TRUE))) %>% 
+      mean(.)
+  }) %>% 
+  unlist()
+# Make it into a proper eCDF object.
+F.flX.l <- approxfun(delta_,  F_l_flX_, method = "constant", yleft = 0, yright = 1, 
+                    f = 0, ties = "ordered")
+class(F.flX.l) <- c("ecdf", "stepfun", class(F.flX.l))
+assign("nobs", length(delta_), envir = environment(F.flX.l))
+
+pb <- progress_bar$new(total = length(delta_))
+F_u_flX_ <- 
+  delta_ %>% 
+  map(~{ # outer loop is over possible values of the treatment effect
+    delt <- .x
+    pb$tick()
+    
+      map2_dbl(y0,X0,~({
+        y0_ = .x 
+        xx_ = .y
+        i = which(X0==xx_); i
+        F1_fl_tmp <- hatF1X[[i]]
+        F0_fl_tmp <- hatF0X[[i]]
+        
+        (F1_fl_tmp(y0_+delt))/(F0_fl_tmp(y0_))
+      }))  %>% 
+      map_dbl(~(min(1,.x,na.rm=TRUE))) %>% 
+      mean(.)
+  }) %>% 
+  unlist()
+# Make it into a proper eCDF object. 
+F.flX.u <- approxfun(delta_,  F_u_flX_, method = "constant", yleft = 0, yright = 1, 
+                    f = 0, ties = "ordered")
+class(F.flX.u) <- c("ecdf", "stepfun", class(F.flX.u))
+assign("nobs", length(delta_), envir = environment(F.flX.u))
+```
+
+First, let's take a look at bounds on various quantiles of the treatment effect (QoTT):
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+
+qflXu <- quantile(F.flX.l, tau, type=1)
+qflXl <- quantile(F.flX.u, tau, type=1)
+
+df_flX <- 
+  data.frame(tau = c(tau,tau), bound = c(qflXu,qflXl), type=c(rep("upper",length(qflXu)),rep("lower",length(qflXl)))) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021) Covariates") %>% 
+  mutate(label = ifelse(type=="upper","Frandsen & Lefgrens (2021)\nWith Covariates","")) 
+
+```
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-bounds2
+#| fig-cap: Treatment Effect Distribution Bounds with Covariates
+#| fig-width: 10
+#| fig-height: 8
+
+col_scheme <- c("#0A2E36" ,# Frandsen & Lefgrens (No X)
+                "#7DC4CC", # Frandsen & Lefgrens (X)
+                "#FF5733" ) # Williamson and Downs
+
+df_fl %>% 
+  bind_rows(df_flX) %>% 
+  bind_rows(df_wd) %>%  
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
+  geom_line(lwd=1.25) + 
+  geom_hline(aes(yintercept = params$delta), colour = "darkred",lwd=1.25) + 
+  scale_color_manual(values=col_scheme) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none") +
+  annotate("text",x = 0.5, y = params$delta, label = "True Treatment Effect",vjust=-1,colour = "darkred") + 
+  scale_y_continuous(limits = c(-5,5),breaks = seq(-5,5,1))
+
+
+```

@@ -1,0 +1,284 @@
+---
+title: "Buliding Blocks for Constructing Bounds: Part 1"
+subtitle: "Extending the Policy Evaluation Toolkit"
+author: John Graves
+date: "2022-12-19"
+categories: [Partial Identification, Causal Inference]
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: false
+  message: false
+  warning: false  
+  code-fold: true
+  cache: true
+bibliography: "../../../references.bib"
+reference-location: margin
+self-contained: true
+image: "media/lamppost-dd.png"
+---
+
+```{r setup, cache = FALSE}
+library(tidyverse)
+library(here)
+library(glue)
+library(MASS)
+library(scam)
+library(patchwork)
+library(hrbrthemes)
+library(directlabels)
+library(progress)
+library(ggsci)
+library(mgcv)
+library(knitr)
+library(kableExtra)
+select <- dplyr::select
+options("scipen"=100, "digits"=6)
+
+theme_set(hrbrthemes::theme_ipsum())
+```
+
+# Introduction
+
+![](images/twfe-lightpost.png)
+
+-   This part will cover causal inference as a missing data issue.
+-   It will also cover shortfalls of point identification
+    -   Strong assumptions
+    -   Sensitivity to functional form
+-   Partial identification methods offer new objects of interest
+    -   Quantities of interest not point identified, even in RCTs
+        -   Fraction of the population harmed or hurt by an intervention.
+    -   Not as sensitive to functional form (e.g., parallel trends in logs or levels)?
+
+Basic structure can start with CI as a missing data problem.
+
+-   Missing information on potential outcomes.
+-   This restricts the quantities of interest we can point identify, since we don't observe the "coupling" of both potential outcomes.
+    -   Can't, for example, identify the fraction of the population harmed by an intervention.
+        -   We might estimate that the ATE is "good," on average, but this doesn't mean *everyone* is better off.
+    -   Distribution of the treatment effect
+-   Various identification methods bring assumptions that allow us to identify various quantities of interest.
+    -   ATET
+
+# Data Generation Process
+
+```{r}
+#| code-fold: true
+#| echo: true
+#| label: tbl-data
+#| tbl-cap: First 10 rows of data 
+
+params <- 
+  list(
+    N = 2e3,
+    sigma_sq_X = 1.0,
+    sigma_sq_epsilon = 0.3,
+    delta = 1
+  )
+params <- with(params,
+               modifyList(params,list(
+                 r_squared = 1 - sigma_sq_epsilon,
+                 beta = sqrt(1 - sigma_sq_epsilon),
+                 Sigma = matrix(c(sigma_sq_X,0,0,sigma_sq_epsilon),
+                                byrow=TRUE, nrow = 2, ncol = 2))))
+
+gen_data <- function(params) {
+  with(params, 
+       mvrnorm(n = N, mu = c(0,0), Sigma = Sigma)) %>% 
+    data.frame() %>% 
+    as_tibble() %>% 
+    set_names(c("X","epsilon")) %>% 
+    mutate(Y_i0 = params$beta * X + epsilon) %>% 
+    mutate(Y_i1 = Y_i0 + params$delta) %>% 
+    mutate(random = runif(nrow(.))) %>% 
+    mutate(D = as.integer(row_number()<=(params$N)/2)) %>% 
+    arrange(random) %>% 
+    select(-random) %>% 
+    mutate(Y = D * Y_i1 + (1 - D) * Y_i0) %>% 
+    select(Y,D,X)
+}
+
+set.seed(123)
+df <- params %>% gen_data()
+
+df %>% head(n=10) %>% kable() %>% 
+    kable_styling()
+```
+
+# Generating an Empirical Cumulative Distribution Function
+
+Let's define some useful objects:
+
+```{r}
+#| code-fold: false
+#| echo: true
+
+y1 <- # Vector of treated outcomes
+    df %>% filter(D==1) %>% pull(Y)
+
+y0 <- # Vector of untreated outcomes
+    df %>% filter(D==0) %>% pull(Y)
+
+y_ <- # Vector of the support of the outcome, with 100 evenly-spaced values along it. 
+    seq(floor(min(y0,y1))-1,ceiling(max(y0,y1))+1, length.out = 100)
+
+```
+
+Our first option is to construct by hand. This type of approach will come in handy later when we want to construct a conditional CDF.
+
+```{r}
+#| code-fold: true
+#| echo: true
+#| label: fig-ecdf1
+#| fig-cap: Constructed Empirical Cumulative Distribution Function
+
+eCDF_y1 <- 
+    y_ %>% # Iterate over the support of y
+    map_dbl(~({
+        IY = as.integer(y1 <= .x)
+        mean(IY)
+    }))
+p0 <-  # Plot the constructed eCDF
+    tibble(x = y_, y = eCDF_y1, method = "Constructed") %>% 
+    ggplot(aes(x = x, y = y)) + geom_step(lwd=2)
+p0 
+```
+
+A second option is to simply use the R command `ecdf()`. This command creates a function that we can feed y values to to get their quantile in the distribution. Let's overlay the plot with an eCDF constructed this way in yellow:
+
+```{r}
+#| code-fold: true
+#| echo: true
+#| label: fig-ecdf2
+#| fig-cap: Constructed Empirical Cumulative Distribution Function
+
+eCDF_y1_v2 <- ecdf(y1)
+df_v2 <- tibble(x = y_, y = eCDF_y1_v2(y_), method = "ecdf()")
+p0 + 
+    geom_step(data = df_v2, col = "yellow")
+
+```
+
+@fig-ecdf1 and @fig-ecdf2 are both step functions---but occasionally we may need a smoothed version because the empirically-estimated version is a bit lumpy (e.g., it may not conform to the requirement that the cdf monotonically increases and is bounded by 0 and 1). We can address this by fitting a smooth function to the points, and imposing the necessary shape constraint for a CDF (i.e., monotonically increasing, between 0 and 1) using the methods [here](https://link.springer.com/article/10.1007/s11222-013-9448-7). This can be done using the R package `scam`, and using code inspired by [this source](https://stackoverflow.com/questions/51438627/get-the-derivative-of-an-ecdf).
+
+```{r}
+#| code-fold: true
+#| echo: true
+#| label: fig-ecdf3
+#| fig-cap: Constructed Empirical Cumulative Distribution Functions
+
+dat <-
+    tibble(x = y_, cdf = ecdf(y1)(y_))
+n.knots = 20
+n <- length(dat$x)
+fit <-
+    scam::scam(cdf ~ s(x, bs = "mpi", k = n.knots),
+               data = dat,
+               weights = c(n, rep(1, n - 2), 10 * n))
+## interior knots
+xk <- with(fit$smooth[[1]], knots[4:(length(knots) - 3)])
+## spline values at interior knots
+yk <- predict(fit, newdata = data.frame(x = xk))
+## reparametrization into a monotone interpolation spline
+xg <- seq(min(dat$x), max(dat$x), length = 100)
+f <- stats::splinefun(xk, yk, "hyman")
+dat$cdf_sm = f(y_)
+
+p0 + 
+    geom_step(data = df_v2, col = "yellow") + 
+    geom_line(data = dat, aes(y = cdf_sm), col = "blue",lwd=1.1)
+
+```
+
+# Conditional CDFs
+
+First, the long way ...
+
+```{r}
+#| code-fold: true
+#| echo: true
+#| label: fig-ecdfX1
+#| fig-cap: Conditional Empirical Cumulative Distribution Function
+
+
+i1 <-  # index of treated observations
+  df %>% 
+  mutate(i = row_number()) %>% 
+  filter(D==1) %>% 
+  pull(i)
+
+i0 <-  # index of untreated observations
+  df %>% 
+  mutate(i = row_number()) %>% 
+  filter(D==0) %>% 
+  pull(i)
+
+X1 <- # X values of treated observations
+  df %>%
+  filter(D==1) %>%
+  pull(X)
+
+X0 <- # X values of untreated observations
+  df %>% 
+  filter(D==0) %>% 
+  pull(X)
+
+library(tictoc)
+tic()
+hatFX_ <- 
+    y0[c(25,50)] %>% 
+    map(~{
+        i <- which(y0==.x); i
+        res_ <- map_dbl(y0,~({
+            IY = as.integer(y0 <= .x)
+            X <- X0
+            df_ <- data.frame(IY = IY , X = X)
+            fit <- gam(IY ~ s(X), data = df_, family = "binomial")
+            predict(fit, newdata = data.frame(X = X0[i]), type = "response")
+        }))
+        BMisc::makeDist(y0,res_)
+    })
+time1 <- toc()
+
+p1 <- 
+  tibble(y = c(y0,y0), cdf = c(hatFX_[[1]](y0),hatFX_[[2]](y0)),id = c(rep("A",length(y0)),rep("B",length(y0)))) %>% 
+  ggplot(aes(x = y, y = cdf, group = id)) +
+  geom_step(lwd=1.5)
+
+p1
+```
+
+<!-- # This from https://arxiv.org/pdf/1610.07894.pdf -->
+
+$$
+F_{Y_{j} \mid X_{j}}(y \mid x) \equiv \int_{(0,1)} 1\left\{Q_{Y_{j} \mid X_{j}}(u \mid x) \leq y\right\} d u
+$$
+
+<!-- # This is eq (4) from https://arxiv.org/pdf/1610.07894.pdf -->
+
+$$
+\hat{F}_{Y_{j} \mid X_{j}}(y \mid x)=\varepsilon+\int_{(\varepsilon, 1-\varepsilon)} 1\left\{x^{\prime} \hat{\beta}_{j}(u) \leq y\right\} d u
+$$
+
+<!-- # This from https://arxiv.org/pdf/1610.07894.pdf -->
+
+$$
+\hat{\beta}_{j}(u)=\arg \min _{b \in \mathbb{R}^{d x}} \sum_{i=1}^{n_{j}}\left[u-1\left\{Y_{j i} \leq X_{j i}^{\prime} b\right\}\right]\left[Y_{j i}-X_{j i}^{\prime} b\right]
+$$
+
+```{r}
+
+taus <- sort(ecdf(y0)(y0))
+tic()
+quantreg_fit <- quantreg::rq(Y ~ X, tau = taus, data = df %>% filter(D==0))
+time2 <- toc()
+hatFX <- predict(quantreg_fit,stepfun=TRUE)
+
+p1 + 
+  geom_step(
+    data = tibble(y = c(hatFX[[25]](taus),hatFX[[50]](taus)), cdf= c(taus,taus), 
+                  id = c(rep("A",length(taus)), rep("B",length(taus)))),
+    col = "red",lwd=1.25
+  )
+```

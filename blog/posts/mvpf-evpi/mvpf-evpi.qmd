@@ -1,0 +1,572 @@
+---
+title: "Welfare Analysis Meets Decision Theory"
+subtitle: "Part One: Net Welfare Benefit and the Value of Information"
+author: John Graves
+date: "2023-03-24"
+categories: [CEA, MVPF]
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: false
+  message: false
+  warning: false  
+bibliography: "../../../references.bib"
+reference-location: margin
+self-contained: true
+image: "media/noun-scale-1588863.png"
+---
+
+**Part one** in a three-part series on how the tools of comparative welfare analysis can be used to refine and design prospective randomized evaluations.
+
+```{r setup}
+
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+library(tidyverse)
+library(glue)
+library(mgcv)
+library(knitr)
+library(kableExtra)
+library(ggthemes)
+library(ggsci)
+library(directlabels)
+library(extrafont)
+library(gganimate)
+#extrafont::font_import()
+```
+
+## Introduction
+
+Suppose a policymaker is considering strategies to reduce poverty. For the sake of simplicity, let's assume the policymaker is weighing the tradeoffs of creating or expanding an in-kind benefit transfer, such as a job training program.
+
+Implementing the program has a measurable impact on welfare-relevant outcomes (e.g., education, lifetime earnings, health, etc.). However, the program also imposes costs on society. These costs reflect both the budgetary cost (i.e., the total sum of program expenditures), as well as other changes in behavior, expenditures, or tax revenues that either bolster or drag on social welfare.
+
+Before we proceed, it is useful to formalize the above and define summary measures of policy benefits $W(\mathbf{\pi},\alpha)$ and costs $C(\mathbf{\pi},\alpha)$. The vector $\mathbf{\pi}$ captures welfare-relevant parameters such as the average willingness-to-pay for the policy, program costs, and any fiscal externalities (FEs) that occur as a consequence of the policy.[^1] We define and measure welfare benefits and costs for each of $D$ total policy strategies $\boldsymbol{\alpha} = (\alpha_1, \cdots , \alpha_D)$.
+
+[^1]: For example, these fiscal externalities might include changes to government tax revenues stemming from changes in participation in the labor force and/or other social programs.
+
+In a series of influential papers, Hendren and colleagues define the **Marginal Value of Public Funds (MVPF)** as the ratio of benefits to costs [@finkelsteinWelfareAnalysisMeets2020; @hendrenCaseUsingMVPF2022; @hendrenPolicyElasticity2016; @hendrenCaseUsingMVPF2022]:
+
+$$
+MVPF(\mathbf{\pi},\alpha) = \frac{W(\mathbf{\pi},\alpha)}{C(\mathbf{\pi},\alpha)}
+$$ {#eq-mvpf}
+
+The MVPF measures the marginal value of an additional dollar spent on a policy. That is, the MVPF quantifies how the welfare benefits accrued by implementing a policy compare to the costs of adopting it.
+
+While we will leave the theoretical details to the aforementioned citations, we can summarize the MVPF of an in-kind benefit transfer as:
+
+$$
+MVPF^{\text{inkind}}(\mathbf{\pi},\alpha) = \frac{W(\mathbf{\pi},\alpha)}{1+FE(\mathbf{\pi},\alpha)}
+$$ {#eq-inkind} where $FE(\mathbf{\pi},\alpha)$ is the fiscal externality associated with the policy, and $W(\mathbf{\pi},\alpha)$ is the willingness to pay among infra-marginal recipients of the program.
+
+In this example, we are comparing a single policy strategy (in-kind benefit program) to an alternative strategy of doing nothing. However, in principle we could think of alternative (competing) strategies to achieve the same objective---each with its own welfare cost and benefit estimates---that might be under consideration.
+
+## The State of Current Knowledge
+
+Suppose that previous research has quantified the welfare benefits and costs---such that the hypothetical policymaker has at her disposal some information that can guide her decision on which policy (if any) to pursue.
+
+The state of current information is summarized in @tbl-current.
+
+```{r}
+#| label: tbl-current
+#| tbl-cap: Summary of Current Knowledge 
+
+set.seed(23)
+n <- 1e5
+
+w_inkind <- rlnorm(n, log(1.2),0.1)
+
+fe_inkind <- rnorm(n, 0.35,.02)
+
+c_inkind <- 1+fe_inkind
+
+mvpf_inkind = w_inkind / c_inkind
+
+fround <- function(a,...) format(round(a,...), nsmall = 2)
+
+curr_info <- 
+tibble(
+    #W.cash_mean = fround(mean(w_cash),2), 
+    #W.cash_int = "",
+    #MVPF.cash_mean = fround(mean(mvpf_cash),2),
+    #MVPF.cash_int = glue("[{fround(quantile(mvpf_cash,0.025),2)},{fround(quantile(mvpf_cash,0.975),2)}]"),
+    #C.cash_mean = fround(mean(c_cash),2),
+    #C.cash_int = glue("[{fround(quantile(c_cash,0.025),2)},{fround(quantile(c_cash,0.975),2)}]"),    
+    W.inkind_mean = round(mean(w_inkind),2),
+    W.inkind_int = glue("[{fround(quantile(w_inkind,0.025),2)},{fround(quantile(w_inkind,0.975),2)}]"),
+    MVPF.inkind_mean = fround(mean(mvpf_inkind),2),
+    MVPF.inkind_int = glue("[{fround(quantile(mvpf_inkind,0.025),2)},{fround(quantile(mvpf_inkind,0.975),2)}]"),    
+    C.inkind_mean = round(mean(c_inkind),2),
+    C.inkind_int = glue("[{fround(quantile(fe_inkind,0.025),2)},{fround(quantile(fe_inkind,0.975),2)}]")    
+) 
+    
+curr_info %>% gather(measure,value) %>% 
+    separate(measure,into = c("a","measure"),sep = "_") %>% 
+    separate(a, into = c("outcome","policy"),sep = "\\.") %>% 
+    spread(measure,value) %>% 
+    unite(mean,mean,int,sep = " ") %>% 
+    spread(outcome,mean) %>% 
+    select(policy,MVPF,W,C) %>% 
+    kable(col.names = c("","MVPF [95% interval]", "Benefits [95% Interval]","Costs [95% Interval]")) %>% 
+    kable_styling()
+```
+
+## MVPF as a Decision Tool
+
+@tbl-current highlights that the policymaker's decision is fraught with uncertainty. Based on current information, the estimated MVPF of the in-kind benefit is `r fround(mean(mvpf_inkind),3)`. However, the 95% interval shows that current knowledge is consistent with the policy more than paying for itself (i.e., an MVPF above 1), *and* with the policy resulting in some redistribution (i.e., an MVPF below 1).
+
+In short, based on current evidence, it is hard to say for sure whether the policy should be adopted.
+
+Our policymaker's decision problem actually goes one step further. The MVPF summarizes the private benefits that accrue from the in-kind benefit transfer; it may be that social preferences are such that, from a societal perspective, a policy with an MVPF below 1.0 is not worth pursuing.
+
+We can formalize this idea by defining an additional parameter $\lambda$ summarizing societal willigness-to-pay (WTP). This threshold value could simply be based on an MVPF of one (i.e., the benefit must be at least as great as the cost). Or, if society values some redistributive consequence of the policy, $\lambda$ could be set based on a value less than one.[^2]
+
+[^2]: For example, @finkelsteinSubsidizingHealthInsurance2019 make comparative assessments of health insurance subsidization policies by specifying a social welfare function over Constant Relative Risk Aversion (CRRA) utility and a defined coefficient of risk aversion ($\sigma = 3$). This results in $\lambda = 0.2$. But researchers do not necessarily have to specify the structure of the social welfare function to define a decision-making benchmark. A value tied to an existing policy with strong social support could also suffice. For instance, @finkelsteinSubsidizingHealthInsurance2017 also consider a benchmark ($\lambda = 0.88$) based on the MVPF of the Earned Income Tax Credit (EITC)---a popular means-tested cash transfer program. Finally, @hendrenMeasuringEconomicEfficiency2020 argues for the use of efficient welfare weights that project the welfare costs and benefits of any specific policy into the MVPF of a tax transfer between the affected populations.
+
+```{r}
+lambdas <- seq(0.2,1.2,0.05)
+
+df <- 
+    lambdas %>% map(~{
+        lambda <- .x
+        
+        tibble(
+        #w_cash = 1,
+        #c_cash = c_cash,
+        w_inkind = w_inkind,
+        c_inkind = c_inkind
+        ) %>% 
+            mutate(#nwb_cash = w_cash - lambda * c_cash,
+                   nwb_inkind = w_inkind - lambda * c_inkind) %>% 
+            mutate(inwb =  nwb_inkind) %>% 
+            mutate(lambda = lambda) %>% 
+        mutate(id = row_number())
+    }) %>% 
+    bind_rows()
+```
+
+@fig-mvpf visualizes this uncertainty for 1,000 draws from the uncertainty distributions of $W^{\text{inkind}}(\mathbf{\pi},\alpha)$ and $C^{\text{inkind}}(\mathbf{\pi},\alpha)$ in @tbl-current.[^3] In addition, for three hypothetical values of $\lambda$, each point is shaded based on whether the implied MVPF is above or below $\lambda$.
+
+[^3]: For the sake of this example, welfare benefits are drawn from a lognormal distribution with mean $\log(1.2)$ and standard deviation $0.1$. Welfare costs are based on @eq-inkind and a fiscal externality that is normally distributed with mean $0.35$ and standard deviation $0.2$.
+
+The dotted lines show a ray from the origin with slope $1/\lambda$; values that fall under and to the right of the line are those where the MVPF$\geq \lambda$ and those that fall up and to the left of the line are those where MVPF$<\lambda$. Finally, the green diamonds plot the average welfare benefit and cost values as summarized in @tbl-current.
+
+```{r}
+#| label: fig-mvpf
+#| fig-cap: Welfare Cost and Benefits Overlaid With Decision Rules Based on $\lambda$
+#| fig-subcap: 
+#|   - "lambda = 1.0"
+#|   - "lambda = 0.90"
+#|   - "lambda = 0.5"
+#| layout-ncol: 2
+#| layout-nrow: 2
+
+set.seed(123)
+
+tmp_ <- 
+    tibble(
+        #w_cash = 1,
+        #c_cash = c_cash,
+        w_inkind = w_inkind,
+        c_inkind = c_inkind
+        )  %>% 
+    mutate(id = row_number()) 
+
+tmp_summ_1_ <- 
+    tmp_ %>% 
+    summarise(
+          # w_cash = mean(w_cash),
+           #c_cash = mean(c_cash),
+           w_inkind = mean(w_inkind),
+           c_inkind = mean(c_inkind)) %>% 
+    mutate(id =1) %>% 
+    gather(measure,value,-id) %>%
+    separate(measure, into = c("outcome","strategy")) %>% 
+    spread(outcome,value) %>% 
+    mutate(nwb = w - 1 * c) %>% 
+    mutate(decision = factor(as.integer(nwb>=0),levels = c(0,1),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+    filter(strategy=="inkind")
+
+tmp_summ_.9_ <- 
+    tmp_ %>% 
+    summarise(
+          # w_cash = mean(w_cash),
+           #c_cash = mean(c_cash),
+           w_inkind = mean(w_inkind),
+           c_inkind = mean(c_inkind)) %>% 
+    mutate(id =1) %>% 
+    gather(measure,value,-id) %>%
+    separate(measure, into = c("outcome","strategy")) %>% 
+    spread(outcome,value) %>% 
+    mutate(nwb = w - .9 * c) %>% 
+    mutate(decision = factor(as.integer(nwb>=0),levels = c(0,1),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+    filter(strategy=="inkind")
+
+tmp_summ_.5_ <- 
+    tmp_ %>% 
+    summarise(
+           #w_cash = mean(w_cash),
+           #c_cash = mean(c_cash),
+           w_inkind = mean(w_inkind),
+           c_inkind = mean(c_inkind)) %>% 
+    mutate(id =1) %>% 
+    gather(measure,value,-id) %>%
+    separate(measure, into = c("outcome","strategy")) %>% 
+    spread(outcome,value) %>% 
+    mutate(nwb = w - .5 * c) %>% 
+    mutate(decision = factor(as.integer(nwb>=0),levels = c(0,1),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+    filter(strategy=="inkind")
+
+
+p1 <-    tmp_ %>% 
+        filter(id %in% sample(1:nrow(.),1000)) %>% 
+        select(id,w_inkind,c_inkind) %>% 
+        gather(measure,value,-id) %>%
+        separate(measure, into = c("outcome","strategy")) %>% 
+        spread(outcome,value) %>% 
+        mutate(nwb = w - c) %>% 
+        mutate(decision = factor(as.integer(nwb>=0),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+        filter(strategy=="inkind") %>% 
+        ggplot(aes(x = w, y = c,colour = decision)) + 
+        ggthemes::theme_hc() + 
+        geom_point(alpha = 0.08) +
+        theme(text = element_text(family = "Arial")) + 
+        lims(x = c(0,2),y = c(0,1.5)) + 
+        geom_abline(aes(intercept = 0, slope =1),lty=2) + 
+        geom_point(data = tmp_summ_1_,size = 5,pch=18, colour = "green") +
+        ggsci::scale_colour_jama() 
+
+p1_f <- direct.label(p1,method = list("ahull.grid"))
+p1_f
+
+p2 <-    tmp_ %>% 
+        filter(id %in% sample(1:nrow(.),1000)) %>% 
+        select(id,w_inkind,c_inkind) %>% 
+        gather(measure,value,-id) %>%
+        separate(measure, into = c("outcome","strategy")) %>% 
+        spread(outcome,value) %>% 
+        mutate(nwb = w - 0.9 * c) %>% 
+        mutate(decision = factor(as.integer(nwb>=0),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+        filter(strategy=="inkind") %>% 
+        ggplot(aes(x = w, y = c,colour = decision)) + 
+        ggthemes::theme_hc() + 
+        geom_point(alpha = 0.08) +
+        theme(text = element_text(family = "Arial")) + 
+        lims(x = c(0,2),y = c(0,1.5)) + 
+        ggsci::scale_colour_jama() + 
+        geom_abline(aes(intercept = 0, slope =1/.9),lty=2) + 
+        geom_point(data = tmp_summ_.9_,size = 5,pch=18, colour = "green")
+
+p2_f <- direct.label(p2,method = list("ahull.grid"))
+p2_f
+ggsave(p2_f, filename = "media/welfare-cost-plot.png")
+
+p3 <-    tmp_ %>% 
+        filter(id %in% sample(1:nrow(.),1000)) %>% 
+        select(id,w_inkind,c_inkind) %>% 
+        gather(measure,value,-id) %>%
+        separate(measure, into = c("outcome","strategy")) %>% 
+        spread(outcome,value) %>% 
+        mutate(nwb = w - 0.5 * c) %>% 
+         mutate(decision = factor(as.integer(nwb>=0),levels = c(0,1),labels = c("MVPF < lambda","MVPF >= lambda"))) %>% 
+        filter(strategy=="inkind") %>% 
+        ggplot(aes(x = w, y = c,colour = decision)) + 
+        ggthemes::theme_hc() + 
+        geom_point(alpha = 0.08) +
+        theme(text = element_text(family = "Arial")) + 
+        lims(x = c(0,2),y = c(0,1.5)) + 
+        scale_colour_manual(values="#DF8F44FF") +
+        geom_abline(aes(intercept = 0, slope =1/.5),lty=2) + 
+        geom_point(data = tmp_summ_.5_,size = 5,pch=18, colour = "green")
+
+p3_f <- direct.label(p3,method = list("ahull.grid"))
+p3_f
+
+```
+
+@fig-mvpf-1 highlights that when $\lambda=1$, the MVPF of the in-kind benefit strategy rarely exceeds the societal willingness-to-pay threshold. In other words, there are few points in the joint uncertainty distribution where the value falls below and to the right of the dotted line. Thus, there is some---but not much---uncertainty in the decision to **not** implement the policy under this decision criterion.
+
+By comparison, @fig-mvpf-3 shows that when $\lambda=0.5$, there is no decision uncertainty; our policymaker would conclude that the the in-kind benefit should be adopted---and this decision is consistent across *all* values in the uncertainty ranges.
+
+## The Opportunity Cost of Imperfect Information
+
+The above discussion highlights that depending on social preferences, policy decisions based on current information may carry an opportunity cost of making the *wrong* decision. This is most evident in @fig-mvpf-2, where based on the average welfare cost estimates in @tbl-current (plotted as a green dot in @fig-mvpf-2), the policymaker might elect to pursue an in-kind benefit program. In other words, the implied average MPVF basd on these values is `r fround(mean(mvpf_inkind),3)`. If $\lambda = 0.9$, this value is below the WTP threshold---so the policy would appear to pass a societal cost-benefit test.
+
+However, @fig-mvpf-2 also makes clear the available information is also consistent with the "true" MVPF falling *above* $\lambda$. That is, roughly half of the points are shaded gold (i.e., the policy does not pass our defined societal cost-benefit test) and half are shaded black (i.e., MVPF$<\lambda$). If the true MVPF is below $\lambda$, then society would incur a net welfare loss from implementing the policy.
+
+Contrast this with the scenario in @fig-mvpf-3, which is based on $\lambda = 0.5$. In that scenario, there is uncertainty in the underlying welfare estimates but *no* uncertainty in policy adoption decisions. The same decision (to implement the in-kind benefit program) occurs across the entire uncertainty range, so there is no opportunity cost to making the "wrong" decision.
+
+## Net Welfare Benefit
+
+Let's now formalize the above observations by defining the **net welfare benefit** as the benefits of a given policy minus $\lambda$ multiplied by the costs:
+
+$$
+NWB(\boldsymbol{\pi},\alpha,\lambda) = W(\boldsymbol{\pi},\alpha) - \lambda \cdot C(\boldsymbol{\pi},\alpha) 
+$$ {#eq-nwb}
+
+Intuitively, policies where $NWB \geq 0$ indicate situations where the MVPF is equal to or greater than $\lambda$. Put simply, when the NWB is positive, the policy passes the societal cost-benefit test; when it is negative, it does not.
+
+With the NWB defined, it is useful to think about uncertainty along two distinct but related dimensions:
+
+1.  **Variation in the NWB** that derives from sampling/structural/modeling uncertainty in estimates of $W^{\text{inkind}}(\mathbf{\pi},\alpha)$ and $C^{\text{inkind}}(\mathbf{\pi},\alpha)$.
+
+2.  **Variation in optimal decisions**, which occurs when variation from (1) causes frequent sign changes in the NWB.
+
+In other words, depending on the value of $\lambda$, variation in welfare outcomes (costs and benefits) *does not necessarily imply* variation in optimal decisions; it may be $\lambda$ is sufficiently low (or high) that *policy decisions* do not vary across the uncertainty distribution.[^4]
+
+[^4]: This is the scenario depicted in @fig-mvpf-3.
+
+## From Net Welfare Benefit to Value of Information
+
+The idea that decisions based on current information may carry a welfare-valued opportunity cost underlies decision theoretic concepts of the value of information (VOI).
+
+Before we define various VOI concepts and measures, let's lay out the practical questions a VOI-based approach to welfare analysis based on the MVPF can answer:
+
+1.  **Which strategies are cost-effective given social preferences and *based on current evidence*?** To answer this question, we can assess whether current knowledge--cast against a summary measure of social preferences such as $\lambda$---is sufficient to confidently make policy decisions. Because we may not want to make a stance on the particular value of $\lambda$, we can vary these assessments over a plausible range of values and estimate the expected welfare loss of making the wrong decision at a given value of $\lambda$.
+
+2.  **Should we invest more resources to reduce uncertainty in our decisions?** If so, it will be important to isolate which sources of uncertainty we should focus on. Furthermore, we want to think about the most efficient way to sample the population to improve our knowledge on these dimensions.
+
+## The Welfare Loss from Imperfect Information
+
+To answer the first question, we need a summary measure of the expected welfare loss from making the wrong decision.
+
+Define the optimal strategy as
+
+$$
+\alpha^* =\arg\max E_{\boldsymbol{\pi}} \big [ NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ]
+$$ so that $NWB(\alpha^*,\boldsymbol{\pi},\lambda)$ is the net welfare benefit evaluated at the optimal strategy, i.e.,
+
+$$
+NWB(\alpha^*,\boldsymbol{\pi},\lambda) = \max_{\boldsymbol{\alpha}} E_{\boldsymbol{\pi}} \big [  NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ]
+$$
+
+\noindent Next, define a welfare loss function
+
+$$
+L_{\alpha} = \max_{\boldsymbol{\alpha}} NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) - NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda)
+$$ {#eq-loss}
+
+\noindent The loss function evaluated at $\alpha^*$ is
+
+$$
+L_{\alpha^*} = \max_{\boldsymbol{\alpha}} NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) - NWB(\alpha^*,\boldsymbol{\pi},\lambda)
+$$ {#eq-loss-alpha}
+
+\noindent And its expected value is given by
+
+$$
+E_{\boldsymbol{\pi}} \big [ L_{\alpha^*} \big ]  = E_{\boldsymbol{\pi}} \big [ \max_{\boldsymbol{\alpha}} NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ] - NWB(\alpha^*,\boldsymbol{\pi},\lambda)
+$$ {#eq-expected-loss}
+
+The expected welfare loss in @eq-expected-loss is also known as the **expected value of perfect information** [@jacksonValueInformationAnalysis2022; @wilsonPracticalGuideValue2015]:
+
+$$
+E_{\boldsymbol{\pi}} \big [ L_{\alpha^*} \big ]  = EVPI(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) 
+$$ \### Estimating the Expected Welfare Loss
+
+The code below calcualtes the EVPI for the MVPF of the in-kind benefit transfer above, for a particular value of $\lambda$:
+
+```{r}
+#| echo: true
+
+set.seed(23)
+n <- 1e5   # Number of uncertainty distribution draws
+w <- rlnorm(n, log(1.2),0.1)   # welfare benefit is lognormal(ln(1.2),0.1)
+fe <- rnorm(n, 0.35,.02)  # fiscal externality is norm(0.35,0.02)
+c <- 1+fe  # cost is denominator of MVPF
+
+lambda <- 0.9  # set a societal WTP value
+nwb <- w - lambda * c  # calculate the net welfare benefit
+evpi <-mean(pmax(0,nwb))-max(0,mean(nwb))  # expected value of perfect information
+evpi
+
+```
+
+The estimated EVPI (`r fround(evpi,3)`) is non-zero, indicating that there is overall value in reducing uncertainty in the policymaker's decision to implement the in-kind benefit transfer. However, note that the EVPI varies over different values of $\lambda$. If $\lambda$ were instead 0.5, we would make the same decision (to implement the policy) across the entire uncertainty range---so there is no value in obtaining new information on uncertain inputs into the MVPF estimate. This can be seen in the code below:
+
+```{r}
+#| echo: true
+
+lambda <- 0.5 # set a societal WTP value
+nwb_alt <- w - lambda * c  # calculate the net welfare benefit
+evpi_alt <-mean(pmax(0,nwb_alt))-max(0,mean(nwb_alt))  # expected value of perfect information
+evpi_alt
+
+```
+
+@fig-evpi is based on repeating the above exercise across a variety of $\lambda$ values (x-axis) and plotting the resulting EVPI estimate for each (y-axis):
+
+```{r}
+#| label: fig-evpi
+#| fig-cap: Expected Value of Reducing Decision Uncertainty Through Future Research, by Societal Willingness-to-Pay Value (lambda)
+#| layout-ncol: 1
+#| layout-nrow: 1
+#| 
+#Value of eliminating ALL model uncertainty
+#The pmax function takes the max between 0 and each INB separately
+
+inwb <- nwb <- w_inkind - 0.9 *c_inkind
+evpi<-mean(pmax(0,inwb))-max(0,mean(inwb))
+
+evpi_ <- nwb_ <- inwb_ <- mu.theta_ <- sigma.theta_ <- list() 
+
+lambdas <- seq(0.5,1.5,.05)
+
+for (i in 1:length(lambdas)) {
+    lambda <- lambdas[i]
+    
+    nwb_[[i]] <- w_inkind - lambda*c_inkind
+    
+    inwb_[[i]] <- nwb_[[i]] 
+    
+    mu.theta_[[i]] <-mean(inwb_[[i]])
+    sigma.theta_[[i]]<-var(inwb_[[i]])
+    
+    
+    evpi_[[i]] <-  mean(pmax(0,inwb_[[i]]))-max(0,mean(inwb_[[i]]))
+    
+}
+
+tmp_ <- 
+  tibble(lambda = lambdas, evpi = unlist(evpi_))  
+
+xlab <- expression(paste("MVPF Value of Societal Willingness-to-Pay (",lambda,")"))
+  
+tmp_ %>% ggplot(aes(x = lambda, y = evpi)) + 
+  ggthemes::theme_hc() + 
+  geom_line() + geom_point() +
+  theme(text = element_text(family = "Arial")) + 
+  labs(y = "Expected Value of Perfect Information", 
+       x = xlab)
+
+ggsave("media/evpi.png")
+```
+
+## Summary and Next Steps
+
+@fig-evpi tells us that based on existing evidence, we have an answer to our first question: if the societal willigness-to-pay value ($\lambda$) is in the neighborhood of 0.75-1.15, then there is high information value in future research to reduce uncertainty in $W(\mathbf{\pi},\alpha)$ and $C(\mathbf{\pi},\alpha)$.
+
+With this information in mind---and so long as pursuing more information has value---we can move on to the second question and start to ask (a) which specific sources of uncertainty (i.e., individual parameters or sets of parmeters in $W(\mathbf{\pi},\alpha)$ and $C(\mathbf{\pi},\alpha)$) drive the overall EVPI estimate? And how can we prospectively design a clinical trial or randomized evaluation in such a way as to most efficiently reduce information uncertainty to a point where a better decision can be made? Answering these questions is the focus of [part two in this series](../mvpf-evsi/mvpf-evsi.qmd).
+
+```{r}
+#| eval: false
+#| warning: false
+#| message: false 
+library(tidyverse)
+library(ggthemes)
+library(gganimate)
+library(patchwork)
+
+df <- tibble(x = -1, y = 1 , scenario = 1, colour = "red")
+df_2 <- tibble(x = rnorm(n = 200, mean = -1, sd=0.2), 
+              y = rnorm(n=200, mean=1, sd=0.1),
+              scenario = 2) %>% 
+  mutate(colour = ifelse(x<=0,"red","blue")) %>% 
+  mutate(seq = row_number())
+df_3 <- tibble(x = pmin(2,pmax(-2,rnorm(n = 200, mean = -.5, sd=1))), 
+              y = pmax(-2,pmin(2,rnorm(n=200, mean=1, sd=0.1))),
+              scenario = 3) %>% 
+  mutate(colour = ifelse(x<=0,"red","blue")) %>% 
+  mutate(seq = row_number())
+
+
+p0 <- 
+df %>% 
+  ggplot(aes(x = y , y = x)) + geom_point(aes(colour = colour),size=3) +
+  theme_tufte() + 
+  theme(axis.text = element_blank(),
+        axis.ticks = element_blank(),
+        axis.title = element_blank()) + 
+  geom_errorbar(aes(ymin = x-1, ymax=x+1, x=y-.5, width =0.2)) +
+  geom_errorbar(aes(ymin = x+1, ymax=x+3, x=y-.5, width =0.2)) +
+  coord_flip() +
+  scale_x_continuous(limits = c(-4,4)) +
+  scale_y_continuous(limits = c(-4, 4), breaks = c(-1,1)) +
+  theme(legend.position = "none")
+
+tmp_0  <- p0 +   annotate("text",x = 0,y=-1,label="Base Case\nDecision",size=5) +
+   annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5) +
+    scale_colour_manual(values = c("red"))
+tmp_0 
+ggsave(here::here("drafts/decistion-theory-causal-inference/media/uncertainty-decision-base.png"),width=10, height=8)
+
+
+p0 + geom_point(data = df_2 %>% filter(row_number()==1), alpha = 1,aes(colour = colour)) +
+  annotate("text",x = 0,y=-1,label="Decision is Same\nAs Base Case",size=5) +
+  annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5) + 
+    scale_colour_manual(values = c("red"))
+ggsave(here::here("drafts/decistion-theory-causal-inference/media/uncertainty-decision-base-1.png"),width=10, height=8)
+
+p0 + geom_point(data = df_2 %>% filter(row_number() %in% 1:2), alpha = 1,aes(colour = colour)) +
+  annotate("text",x = 0,y=-1,label="Decision is Same\nAs Base Case",size=5) +
+  annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5)+
+   scale_colour_manual(values = c("red"))
+ggsave(here::here("drafts/decistion-theory-causal-inference/media/uncertainty-decision-base-2.png"),width=10, height=8)
+ 
+ p0 + geom_point(data = df_2 %>% filter(row_number() %in% 1:3), alpha = 1,aes(colour = colour)) +
+  annotate("text",x = 0,y=-1,label="Decision is Same\nAs Base Case",size=5) +
+  annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5) +
+    scale_colour_manual(values = c("red"))
+ggsave(here::here("drafts/decistion-theory-causal-inference/media/uncertainty-decision-base-3.png"),width=10, height=8)
+
+uncert0_anim <- p0 + geom_point(data = df_2 %>% filter(row_number() %in% 1:3), alpha = 1,aes(colour = colour)) +
+  geom_point(data = df_2 %>% filter(row_number() %in% 3:100) , alpha = 1,aes(colour = colour)) +
+  annotate("text",x = 0,y=-1,label="Decision is Same\nAs Base Case",size=5) +
+   scale_colour_manual(values = c("red")) +
+  annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5) + 
+  transition_states(seq, state_length = 0); 
+tmp <- animate(uncert0_anim, duration = 10, fps = length(3:100)/10, renderer = gifski_renderer())
+anim_save(here::here("drafts/decistion-theory-causal-inference/media/uncertainty-decision-psa-1.gif"), tmp)
+
+tmp_ <- p0 + geom_point(data = df_2, alpha = 0.1,aes(colour = colour)) +
+  annotate("text",x = 0,y=-1,label="Decision is Same\nAs Base Case",size=5) +
+  annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5) +
+   scale_colour_manual(values = c("red"))
+tmp_ 
+ggsave(here::here("drafts/decistion-theory-causal-inference/media/uncertainty-decision-psa-1.png"),width=10, height=8)
+
+# uncert1_anim <- p0 + geom_point(data = df_2 %>% filter(row_number() %in% 1:3), alpha = 1,aes(colour = colour)) +
+#   geom_point(data = df_2 %>% filter(row_number() %in% 3:100) , alpha = 1,aes(colour = colour)) +
+#   annotate("text",x = 0,y=-1,label="Decision is Same\nAs Base Case",size=5) +
+#   annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5) + 
+#   transition_states(seq, state_length = 0); 
+# tmp <- animate(uncert0_anim, duration = 10, fps = length(3:100)/10, renderer = gifski_renderer())
+# anim_save(here::here("lectures/media/uncertainty-decision-psa-1.gif"), tmp)
+
+
+uncert2_anim <- p0 + geom_point(data = df_3 %>% filter(row_number() %in% 1:3), alpha = 1,aes(colour = colour)) +
+  geom_point(data = df_3 %>% filter(row_number() %in% 3:100) , alpha = 1,aes(colour = colour)) +
+  annotate("text",x = 0,y=-1,label="Decision is Same\nAs Base Case",size=5) +
+  annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5) + 
+  transition_states(seq, state_length = 0) + 
+  scale_colour_manual(values = c("blue","red"))
+tmp <- animate(uncert2_anim, duration = 10, fps = length(3:100)/10, renderer = gifski_renderer()) 
+anim_save(here::here("drafts/decistion-theory-causal-inference/media/uncertainty-decision-psa-2.gif"), tmp)
+
+  
+tmp_2 <- p0 +   geom_point(data = df_3, alpha=0.1, aes(colour = colour)) +
+  scale_colour_manual(values = c("blue","red")) +
+  annotate("text",x = 0,y=-1,label="Decision is Same\nAs Base Case",size=5) +
+  annotate("text",x = 0,y=1,label="Alternative\nDecision",size=5) 
+tmp_2 
+ggsave(here::here("drafts/decistion-theory-causal-inference/media/uncertainty-decision-psa-2.png"),width=10, height=8)
+
+
+
+```
+
+```{r, eval = FALSE}
+ p <- 
+     df %>% 
+     select(id,nwb_inkind, lambda) %>% 
+     gather(measure,value,-lambda,-id) %>% 
+     filter(lambda == 0.8) %>% 
+     ggplot(aes(x = value)) + 
+     ggthemes::theme_hc() +
+     scale_colour_aaas() +
+     geom_density(aes(colour = measure)) +
+    labs(y= "Expected Value of Perfect Information")
+   
+
+directlabels::direct.label(p,method = list("top.points"))
+
+```

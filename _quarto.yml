@@ -1,19 +1,35 @@
 project:
   type: website
+  resources:
+    - "*.xlsx"
+    - "*.xlsm"
+    - "*.xls"
+    - "*.pptx"
 
 website:
-  title: "vchem-website"
-  navbar:
-    left:
-      - href: index.qmd
-        text: Home
-      - about.qmd
+  title: "Vanderbilt Center for Health Economic Modeling"
+  margin-footer: |
+    ![](./CHEMlogo_white.png)
+  sidebar:
+    style: "floating"
+    search: false
+    collapse-level: 1
+    contents:
+      - index.qmd
+      - text: "Blog"
+        href: blog/index.qmd
+ 
+filters:
+   - lightbox
+   
+execute:
+  freeze: auto  # re-render only when source changes
 
 format:
   html:
-    theme: cosmo
+    theme: flatly
     css: styles.css
     toc: true
 
-editor: visual
+editor: source
 

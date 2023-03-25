@@ -1,0 +1,488 @@
+---
+title: "Welfare Analysis Meets Study Design"
+subtitle: "Part Three: Using the MVPF to Inform the Design of a Randomized Experiment"
+author: John Graves
+date: "2022-12-19"
+categories: [CEA, MVPF]
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: false
+  message: false
+  warning: false  
+  code-fold: true
+bibliography: "../../../references.bib"
+reference-location: margin
+self-contained: true
+image: "media/sampling-figure.png"
+---
+
+**Part three** in a three-part series on how the tools of comparative welfare analysis can be used to refine and design prospective randomized evaluations.
+
+[Reference](https://www.valueinhealthjournal.com/article/S1098-3015(20)30149-2/fulltext)
+
+# Introduction
+
+Earlier posts in this series (see [part one](../mvpf-evpi/index.qmd) and [part two](../mvpf-evppi/index.qmd)) discussed using recent developments in comparative welfare analysis and decision theory to determine the value of future research to guide a policymaker's decision to implement a social policy change.
+
+In the presence of uncertainty in current knowledge, and given a summary measure of social preferences ($\lambda$),[^1] we covered two key concepts:
+
+[^1]: Specifically, we defined $\lambda$ as the the minimal marginal value of public funds (MVPF) necessary to adopt a social policy change.
+
+1.  [The **expected value of perfect information (EVPI)**](../mvpf-evpi/index.qmd) quantifies the welfare-valued opportunity cost of making the "wrong" decision based on current information. The EVPI tells us, for a given value of $\lambda$, the value of obtaining perfect information on all uncertain MVPF parameters.
+
+2.  [The **expected value of partial perfect information (EVPPI)**](../mvpf-evppi/index.qmd) quantifies the degree to which individual MVPF parameters (or subsets of parameters) contribute to the overall EVPI. Calculating the EVPPI for a given policy decision problem allows us to align future research efforts around parameters with the highest information value to make an informed decision.
+
+As noted in the earlier posts, these concepts are fundamentally theoretical---they key off of the idea that we obtain *perfect* information on all (EVPI) or some (EVPPI) parameters that inform an estimate of the MVPF.
+
+That is not to say these measures are not useful, however. The EVPI provides crucial information on whether future research is worth pursuing. The EVPPI helps prioritize this research so that it focuses on parameters with the highest decision leverage.
+
+Having navigated through these guideposts, we now turn to a more practical question: *how can we efficiently design future research to maximize its societal payoff?*
+
+We will do so by estimating the [**expected value of sample information (EVSI)**](https://en.wikipedia.org/wiki/Expected_value_of_sample_information) to guide the design of a randomized experiment.[^2]
+
+[^2]: As with the EVPI and EVPPI, the theoretical foundations of the EVSI date back to seminal work in @raiffaAppliedStatisticalDecision1961, though more modern advancements have substantially reduced the computational burden of calculating the EVSI for a given decision problem. It's also worth noting that in addition to randomized experiments, EVSI calculations can guide other data collection efforts as well (e.g., an observational study or the calculation of key parameters from collecting a population registry.) EVSI methods can also be used to explore the costs and benefits from obtaining parameter information from one approach (e.g., a randomized trial) vs. another (e.g., a retrospective observational study).
+
+## What is the Expected Value of Sample Information?
+
+To build an intuitive foundation for what follows, suppose we decide to design a randomized experiment that will improve our knowledge of MVPF parameter(s) $\pi_z$.[^3]
+
+[^3]: Note that all other remaining MVPF parameters in $\mathbf{\pi}$ are captured in $\mathbf{\pi_{-z}}$, such that $\mathbf{\pi} = (\mathbf{\pi_{z}},\mathbf{\pi_{-z}})$.
+
+We traditionally think about the design of randomized experiments in terms of their statistical power---that is, the probability that a statistical test will detect a difference between treated and untreated groups, when such a difference exists.
+
+Another way to state the above is that we want to avoid [Type II error](https://en.wikipedia.org/wiki/Type_I_and_type_II_errors). But there are often practical (often resource-based) limits to how far we are willing to go on this.
+
+One way to minimize Type II error is simply to enroll thousands or even millions of study units (e.g., people, households, clinics, etc.). But while that would yield a trial with power at or near 100%, our trial would be costly, time-consuming, and resource intensive---and we may well incur an additional loss in social welfare if an efficacious policy is (randomly) withheld from a large fraction of the overall population.
+
+Consequently, it is common to think of trial design in terms of enrolling enough study units so that a comparison of outcomes between treated and treated units has least 80% power to detect an effect. There is a vast statistical literature specifying analytic formulas and simulation-based exercises to optimize this (statistical) dimension of experimental design.
+
+**A useful way to think about the EVSI is as the social welfare analog to power.** That is, we want to avoid implementing a policy that results in a sub-optimal level of social welfare. It may be that doing nothing (or implementing some alternative policy option) would be the welfare-optimizing choice--but the available (uncertain) evidence leads us down the wrong decision path. To avoid this, we can leverage the EVSI to guide our study design so that we can optimize societal payoff of both the research itself, and the resulting policy decision.
+
+From a design perspective, the EVPPI for our parameter(s) of interest ($\pi_z$) provides an upper bound on the information value that would accrue from obtaining *perfect* information on the "true" value(s) of $\pi_z$. In that sense, designing a trial that enrolls enough people or units to obtain an EVSI that is very close to the EVPPI is like designing a trial with statistical power at or near 100%.
+
+By the same token, we can also think about designing a smaller-scale experiment that provides *some* new information value, but not (near) perfect information. But just as we want to avoid an under-powered trial, we also want to avoid a situation where the information value we obtain from our study is not enough to inform the policymaker's decision.
+
+Calculating the EVSI for different trial sizes (and designs) allows us to do just this.
+
+# Example Scenario
+
+Our running example will be adapted from @garciaCriteriaEvaluatingSocial2022 and @hendrenCaseUsingMVPF2022,[^4] which is based the following MVPF components:
+
+[^4]: I will avoid commenting on the philosophical debate running through @garciaCriteriaEvaluatingSocial2022 and @hendrenCaseUsingMVPF2022 because the concepts in this blog series can easily extend to preferred net welfare measure in @garciaCriteriaEvaluatingSocial2022 and @garciaThreeCriteriaEvaluating2022a. That's because this blog series uses a measure of net welfare benefit constructed using elements that define the MVPF. @garciaThreeCriteriaEvaluating2022a argues for a different conceptualization for whether and how certain elements (e.g., long-run increases in government revenues, the deadweight loss of taxtion) enter the net welfare benefit equation. But fundamentally, they advocate for a measure of net welfare benefit which is entirely compatible with calcualting the EVPI, EVPPI, and EVSI.
+
+$$
+MVPF = \frac{\text{Benefit}}{\text{Net Government Cost}} = \frac{\Delta W}{\Delta E - \Delta C}
+$$ \noindent where $\Delta W$ is the (dollar valued) welfare benefit, $\Delta E$ is the up-front government expenditure for the policy, and $\Delta C$ is the (long-run) change in government revenue that occurs as a result of the policy.[^5]
+
+[^5]: For example, if the policy results in greater labor force participation, $\Delta C$ would capture the higher tax revenues that accrue over beneficiaries lifetimes.
+
+@tbl-current summarizes current knowledge, including 95% central intervals, of the MVPF parameters:
+
+```{r setup}
+#| code-fold: true
+#| echo: true
+#| label: tbl-current
+#| tbl-cap: Summary of Current Knowledge 
+
+library(tidyverse)
+library(glue)
+library(mgcv)
+library(knitr)
+library(kableExtra)
+library(ggthemes)
+library(ggsci)
+library(directlabels)
+library(extrafont)
+library(gganimate)
+library(MASS)
+options("scipen" = 100, "digits" = 5)
+
+set.seed(123)
+K = 1e3
+
+delta_W <- rgamma(K, shape = 32.5, scale=2)
+delta_C <- rgamma(K, shape = 25/6,scale = 6)
+delta_E <- rgamma(K, shape = 1000,scale = .10)
+pi <- list(delta_W = matrix(delta_W), 
+           delta_E = matrix(delta_E),
+           delta_C = matrix(delta_C))
+
+lambdas = seq(0.5,1.4,0.05)
+
+sround <- function(x,r=2) sprintf(glue::glue('%.{r}f'),mean(x))
+print_est_ci <- function(x,r=0) glue::glue("{sround(x,r)} [{sround(quantile(x,0.025),r)},{sround(quantile(x,0.975),r)}]")
+
+tbl <- tibble(description = 
+                c("Benefits to Beneficiaries (W)", 
+                  "Upfront Cost (E)",
+                  "Benefit to Taxpayers (C)",
+                  "Net Government Cost (E-C)",
+                  "MVPF"),
+       value = c(print_est_ci(delta_W), print_est_ci(delta_E), print_est_ci(delta_C), print_est_ci(delta_E - delta_C), print_est_ci(delta_W / (delta_E - delta_C),3))) 
+tbl %>% kable(col.names = c("Description","Value")) %>% 
+    kable_styling()
+```
+
+As we see in @tbl-current, current knowledge tells us that the policy may result in some redistribution (i.e., an MVPF below one)---but current evidence is consistent with both lower MVPF values, as well as MVPF values above one.
+
+## Expected Value of Perfect Information
+
+Our first guidepost is to make sure that *any* future research would help inform our policymaker's decision.[^6] To assess this, we estimate the EVPI for various societal willingness-to-pay parameter ($\lambda$) values. @fig-evpi summarizes this exercise.
+
+[^6]: We covered the EVPI in detail in [part one](../mvpf-evpi/index.qmd) of this series, however both the formulas and code are provided here for the example at hand.
+
+::: {.callout-note collapse="true"}
+## EVPI Equations and Notation (click to expand)
+
+Policy benefits are summarized by $W(\mathbf{\pi},\alpha)$, and costs by $C(\mathbf{\pi},\alpha)$. The vector $\mathbf{\pi}$ captures welfare-relevant parameters such as the average willingness-to-pay for the policy, program costs, and any fiscal externalities (FEs) that occur as a consequence of the policy.
+
+We define and measure welfare benefits and costs for each of $D$ total policy strategies $\boldsymbol{\alpha} = (\alpha_1, \cdots , \alpha_D)$.
+
+Finally, $\lambda$ summarizes societal willigness-to-pay (WTP), i.e., a policy with MVPF greater than or equal to $\lambda$ passes a societal cost-benefit test. This threshold value could simply be based on an MVPF of one (i.e., the benefit must be at least as great as the cost). Or, if society values some redistribution, $\lambda$ could be set based on a value less than one.
+
+The net welfare benefit (NWB) is defined as:
+
+$$
+NWB(\boldsymbol{\pi},\alpha,\lambda) = W(\boldsymbol{\pi},\alpha) - \lambda \cdot C(\boldsymbol{\pi},\alpha) 
+$$ {#eq-nwb}
+
+and we define the optimal strategy as
+
+$$
+\alpha^* =\arg\max E_{\boldsymbol{\pi}} \big [ NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ]
+$$
+
+\noindent where $E_{\pi}$ is the expectation over the joint uncertainty distribution of current knowledge. Thus, $NWB(\alpha^*,\boldsymbol{\pi},\lambda)$ captures the net welfare benefit evaluated at the optimal strategy.
+
+The Expected Value of Perfect Information (EVPI) is given by:
+
+$$
+EVPI(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) = E_{\boldsymbol{\pi}} \big [ \max_{\boldsymbol{\alpha}} NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ] - NWB(\alpha^*,\boldsymbol{\pi},\lambda)
+$$ {#eq-evpi}
+:::
+
+```{r evpi}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-evpi
+#| fig-cap: Expected Value of Perfect Information  by Societal Willingness to Pay Value
+
+calc_nwb <- function(B,C,lambda) {
+    B - lambda * C
+}
+
+calc_evpi <- function(B,      # Benefits
+                      C,      # Net Costs
+                      lambda  # Societal willingness-to-pay 
+                     ) {
+    nwb_ <- calc_nwb(B = B, C = C, lambda = lambda)
+    evpi <- mean(pmax(0,nwb_))-max(0,mean(nwb_)) 
+    return(tibble(lambda = lambda, evpi = evpi))
+}
+
+evpi_data <- 
+    lambdas %>% 
+    map_df(~(calc_evpi(B = delta_W, C = (delta_E - delta_C), lambda = .x)))
+
+xlab <- expression(paste("MVPF Value of Societal Willingness-to-Pay (",lambda,")"))
+  
+p <- 
+    evpi_data %>% 
+    ggplot(aes(x = lambda, y = evpi)) + 
+    geom_point(size = 4) + geom_line(linewidth=1.25) + 
+    theme_hc() + 
+    theme(text = element_text(family = 'Arial')) +
+    labs(x = xlab, y = "Value of Information\nEVPI")
+    #labs(x = "Societal WTP Value (lambda)", y = "Value of Information (EVPI, EVPPI)")
+p
+```
+
+@fig-evpi shows that there is overall value in reducing information uncertainty in the policy decision---and this information value is maximized near a $\lambda$ value of 0.85.[^7]
+
+[^7]: To provide some context for this value, @hendrenPolicyElasticity2016 estimates that the the MVPF for the Earned Income Tax Credit (EITC)---a popular means-tested cash transfer program---is around 0.9. It is worth noting, however, that later updates [center the EITC MVPF estimate at 1.12](https://policyimpacts.org/policy/3c963d7b-01f3-1a24-8e04-b0b0b33fc441/1993-expansion-of-the-earned-income-tax-credit-(eitc)).
+
+## Expected Value of Partial Perfect Information
+
+Our next task is to prioritize future research around efforts to obtain information on parameter(s) with high information value. To do this, we will take probabilistic draws from the joint uncertainty distribution of the MVPF paramters in @tbl-current and [fit flexible metamodels](../mvpf-evppi/index.qmd) for each parameter, with the calculated net welfare benefit as the outcome.[^8]
+
+[^8]: Details on how to do this are provided in [part two](../mvpf-evppi/index.qmd).
+
+::: {.callout-note collapse="true"}
+## EVPPI Equations and Notation
+
+Suppose we could obtain perfect information on some subset ($\boldsymbol{\pi}_z$) of the parameter(s) that determine the MVPF; we do not pursue additional research on the remaining uncertain parameters $\boldsymbol{\pi}_{-z}$.
+
+The **expected value of partial perfect information** (EVPPI) is defined as:
+
+$$
+EVPPI(\boldsymbol{\pi}_z,\lambda) = E_{\boldsymbol{\pi_z}} \big [  \max_{\boldsymbol{\alpha}} E_{\boldsymbol{\pi_{-z}}|\boldsymbol{\pi_z}}NWB(\boldsymbol{\alpha},\boldsymbol{\pi}_z,\boldsymbol{\pi}_{-z},\lambda) \big ] - 
+\max E_{\boldsymbol{\pi}} \big [ NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ]
+$$ {#eq-evppi}
+:::
+
+Based on this exercise, we can calculate and plot the EVPPI value for each MVPF parameter for various $\lambda$ values:
+
+```{r evppi}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-evppi
+#| fig-cap: Expected Value of Partial Perfect Information by Societal Willingness to Pay Value
+
+
+est_evppi <- function(B ,C,pi,lambda) {
+    nwb_ <- calc_nwb(B = B, C = C, lambda = lambda)
+    
+    evppi_2 <- pmax(0,mean(nwb_))
+    
+    evppi <- list()
+    
+    names(pi) %>% 
+        map(~{
+            z <- pi[[.x]]
+            mm.fit <- gam(nwb_ ~ te(z))
+            evppi_inner <- pmax(0, mm.fit$fitted)
+            evppi_1 <- mean(evppi_inner)
+            evppi[[.x]] <- evppi_1 - evppi_2
+        }) %>% 
+        set_names(names(pi)) %>% 
+        unlist()
+
+}
+
+evppi_lambdas <- 
+    lambdas %>% 
+    map(~(est_evppi(B = delta_W, C = (delta_E - delta_C), pi = pi, lambda = .x))) %>% 
+    bind_rows() %>% 
+    mutate(lambda = lambdas)
+colnames(evppi_lambdas) <- gsub("delta_","",colnames(evppi_lambdas))
+
+p2 <- 
+    evppi_lambdas %>% 
+    gather(z,value,-lambda) %>% 
+    mutate(z = gsub("delta_","",z)) %>% 
+    ggplot() + geom_line(aes(x = lambda, y = value, colour = z )) + 
+    ggsci::scale_color_d3() + 
+    theme_hc() + 
+    theme(text = element_text(family = 'Arial')) +
+    labs(x = xlab, y = "Value of Information (EVPI, EVPPI)")
+
+direct.label(p2,list(method = "top.bumponce" , fontface="bold", fontfamily ='Arial'))
+
+```
+
+@fig-evppi shows that for $\lambda$ values near 0.85, the parameter summarizing the welfare benefit of the policy has the highest (partial) information value---though the taxpayer benefit parameter ($C$) also has high information value, especially for higher $\lambda$ values.
+
+# Expected Value of Sample Information
+
+With this information in hand, suppose we set out to collect new data $\mathbf{X}$ to improve our understanding of the benefit to beneficiaries ($W$). We will do so by designing an experiment that randomizes receipt of the policy intervention to a sample of units from our population of interest.
+
+For the purposes of this example, we will simulate a basic experimental design whereby we enroll a sample of $n$ units and randomize the intervention to half---though it is worth noting that we could simulate any trial design here (e.g., stratified or cluster design, stepped-wedge, etc.).[^9]
+
+[^9]: For an example of how to calculate the EVSI for a cluster design, see @weltonExpectedValueSample2014.
+
+::: {.callout-note collapse="true"}
+## Experimental Design Details (click for more)
+
+For this experimental design we will draw on a framework whereby (random) treatment assignment allows us to observe one potential outcome for each study unit. The dependence structure between potential outcomes is defined using a [copula](https://en.wikipedia.org/wiki/Copula_(probability_theory)); for more on the use of copulas in statistics and econometrics, see @fanCopulasEconometrics2014.
+
+We obtain our estimate ($\hat W$) as the difference in outcome means between treated and untreated units.
+:::
+
+```{r, cache = TRUE}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+
+# Sampling new data X based on a randomized intervention to estimate W. 
+X_W <- function(N, n_, p_treat, tau) {
+  
+    population <- 
+      data.frame(id = 1:N) %>% 
+      mutate(u_i = rnorm(nrow(.),mean=0,sd =1))
+        
+    sampled <- sample(1:nrow(population), n_, replace=FALSE)
+        
+    # Treatment status
+    n_treated = n_ * p_treat
+    
+    sample <- 
+      population[sampled,] %>% 
+      mutate(W_ = runif(nrow(.))) %>% 
+      mutate(W = as.integer(order(W_)<=n_treated))
+
+    # Copula-based sampling of potential outcomes, with cor(Y(0),Y(1)) = 0.6
+    corr.matrix.marginals <- matrix(c(1,.6,.6,1),
+                                    byrow=TRUE,
+                                    nrow=2,
+                                    ncol=2)
+    z <- mvrnorm(n_, mu = rep(0,2), Sigma = corr.matrix.marginals, empirical = TRUE)
+    u <- pnorm(z)
+    sample$Y_1 <- qlnorm(u[,1], meanlog = log(1000)-0.5*.2, .2) + rgamma(n_, shape = tau/2, scale=2) + sample$u_i + rnorm(n_)
+    sample$Y_0 <- qlnorm(u[,2], meanlog = log(1000)-0.5*.2, .2) + sample$u_i + rnorm(n_)
+    
+    # Treatment status reveals which potential outcome we observe. 
+    sample$Y <- ifelse(sample$W==1,sample$Y_1,sample$Y_0)
+    out <- sample %>% dplyr::select(id, W, Y) #data.frame(id = 1:n_, W = W, Y = Y)
+    return(out)
+}
+
+est <- function(df) {
+    Y <- as.matrix(df[,"Y"])
+    W <- as.matrix(df[,setdiff(colnames(df),c("Y","id"))])
+    ls.model <- lm(Y ~ W)   # There is no intercept in our model above
+    m <- data.frame(ls.est = coef(ls.model))
+    rownames(m) <- gsub("Wbeta","beta",rownames(m))
+    m <- cbind(m,confint(ls.model))
+    m
+}
+
+df <- X_W(N=10000,n_=1000, p_treat = 0.5, tau = 60) %>% as_tibble()
+
+# Estimate ATE (tau) from the RCT
+est_tau <- function(df)  {
+    res_ <- est(df) 
+    res_["W","ls.est"]
+}
+```
+
+The EVSI is formally defined as:
+
+$$
+EVSI = E_{\mathbf{X}} \big [  \max_{\boldsymbol{\alpha}} E_{\boldsymbol{\pi}|\boldsymbol{X}}NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ] - 
+\max E_{\boldsymbol{\pi}} \big [ NWB(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) \big ]
+$$ {#eq-evsi}
+
+@eq-evsi is quite similar to @eq-evppi, with one key difference: the expectation in the inner term of the first term is conditional on the data we observe in our experiment ($\mathbf{X}$), rather than on $\pi_z$. Since we have not observed any new data yet, the outer expectation is then taken over the distribution of all the possible data realizations we might observe.
+
+In practice, to estimate the EVSI, we first define a function that simulates our randomized experiment with two key inputs:
+
+1.  The sample size
+2.  The treatment effect (i.e., the estimate of $\hat W$)
+
+To obtain a value for #2, at any given (simulated) realization of our experiment, we center a random draw of $W$ for units within our experiment on a mean value drawn from the uncertainty distribution for $W$.
+
+Below, we carry out this exercise for a variety of possible experimental sample sizes ($n=100, 250, 500, 1,000, 2,000, 5,000$ and $10,000$), but for a fixed value of $\lambda=0.85$. @fig-evsi plots the results of this exercise.
+
+```{r, cache = TRUE}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+
+# Estimate the Expected Value of Sample Information
+
+est_evsi <- function(B,  # Benefit              
+                     C,  # Cost
+                     pi, # MVPF inputs
+                     target,  # Target parameter for EVSI calculation
+                     lambda,  # Societal willingness-to-pay parameter
+                     n = c(100, 250, 500, 1000,2000, 5000, 10000),
+                     N = 100000# RCT sample sizes to explore
+                     ) {
+    
+    nwb_ <- B - lambda * C
+    evppi_2 <- pmax(0,mean(nwb_))
+    
+    z <- pi[[target]]
+    mm.fit <- gam(nwb_ ~ te(z))
+    evppi_inner <- pmax(0, mm.fit$fitted)
+    evppi_1 <- mean(evppi_inner)
+    evppi <- evppi_1 - evppi_2
+
+    fitted.phi <- (mm.fit$fitted) 
+    #Find the variance of the fitted values
+    sigma.phi <- var(mm.fit$fitted)
+    
+    size.prior <- length(pi[[target]])
+    evsi <- list()
+    sample_sizes = n
+
+    for (n_ in sample_sizes) {
+        wtp_X <- c()
+        for (i in 1:size.prior) {
+            wtp_X[i] <- {
+                X_W(N = N, n_ = n_, p_treat = 0.5, tau  = pi[[target]][i]) %>% 
+                    est_tau()
+            }
+        }
+        dat <- as.data.frame(cbind(nwb_,wtp_X))
+        fitted.evsi <- gam(nwb_ ~ te(wtp_X), data = dat)
+
+        # Calculate EVSI
+        evsi[[paste0(n_)]] <-  mean(pmax(0, fitted.evsi$fitted.values)) - max(0,mean(fitted.evsi$fitted.values))
+    }
+    out <- evsi %>% 
+        bind_cols() %>% 
+        gather(n,value) %>% 
+        mutate(n = as.numeric(paste0(n)))  %>% 
+        mutate(lambda = lambda)
+    
+    return(out)
+
+}
+set.seed(23)
+evppi_w <- est_evppi(B = delta_W, C = (delta_E - delta_C), pi = pi, lambda = 0.85)["delta_W"]
+evsi <- est_evsi(B = delta_W, C = (delta_E - delta_C), target = "delta_W", pi = pi, lambda = 0.85)
+
+evppi_w2 <- est_evppi(B = delta_W, C = (delta_E - delta_C), pi = pi, lambda = 1.0)["delta_W"]
+evsi2 <- est_evsi(B = delta_W, C = (delta_E - delta_C), target = "delta_W", pi = pi, lambda = 1.0)
+```
+
+@fig-evsi shows that an experimental sample size of 2,000 returns `r round(100 * (evsi %>% filter(n==2000) %>% pull(value) %>% {./evppi_w}),0)`% of the EVPPI, and this rises to `r round(100 * (evsi %>% filter(n==5000) %>% pull(value) %>% {./evppi_w}),0)`% with a sample of 5,000. Doubling the sample size to 10,000 units increases the EVSI, but the marginal increase is just `r round(100 * (evsi %>% filter(n==10000) %>% pull(value) %>% {./evppi_w} - evsi %>% filter(n==5000) %>% pull(value) %>% {./evppi_w}),1)` percentage points.
+
+```{r evsi_plot}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-evsi
+#| fig-cap: Expected Value of Sample Information (% of EVPPI) 
+
+p_evsi <- 
+    evsi %>%
+    ggplot(aes(x = n, y = value, colour = factor(lambda))) + geom_point() + geom_line() + theme_hc() + 
+    ggsci::scale_color_d3()+
+    geom_hline(aes(yintercept = evppi_w), colour = "darkred") + geom_text(aes(label = glue::glue(".  {n} ({round(100*value/evppi_w,1)}%)"),hjust=0)) + 
+    theme(legend.position = "none") +
+    labs(x = "Experimental Sample Size", y = "Expected value of Sample Information (EVSI)") + 
+    annotate("text",x = 0, y = evppi_w, label = glue::glue("EVPPI: {round(evppi_w,2)}"),vjust=-1,hjust=0, colour= "darkred") +
+    scale_y_continuous(expand = c(.25,0)) + theme(text = element_text(family = 'Arial')) +
+  scale_x_continuous(expand=expansion(mult = c(0, .35)),guide = guide_axis(n.dodge=3),breaks = c(100,250, 500, 1000,2000, 5000, 10000))
+p_evsi
+```
+
+## What Happens with Different $\lambda$ values?
+
+The exercise above was carried out with a single societal willingness-to-pay parameter value in mind ($\lambda=0.85$) but it is straightforward to carry out same exercise for different $\lambda$ values.
+
+```{r evsi_plot2}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-evsi2
+#| fig-cap: Expected Value of Sample Information (% of EVPPI) by Societal Willingness to Pay Value
+
+p_evsi2 <- 
+    evsi %>%
+    bind_rows(evsi2) %>% 
+  mutate(evppi = ifelse(lambda ==0.85, evppi_w, evppi_w2)) %>% 
+  mutate(lab = glue::glue(".  {n} ({round(100*value/evppi,1)}%)")) %>% 
+    ggplot(aes(x = n, y = value, colour = factor(lambda))) + geom_point() + geom_line() + theme_hc() + 
+    ggsci::scale_color_d3()+
+    geom_hline(aes(yintercept = evppi_w), colour = "darkred") + geom_text(aes(label = lab,hjust=0)) + 
+    geom_hline(aes(yintercept = evppi_w2), colour = "darkred") +
+    theme(legend.position = "none") +
+    labs(x = "Experimental Sample Size", y = "Expected value of Sample Information (EVSI)") + 
+    annotate("text",x = 0, y = evppi_w, label = glue::glue("EVPPI (lambda = 0.85): {round(evppi_w,2)}"),vjust=-1,hjust=0, colour= "darkred") +
+   annotate("text",x = 0, y = evppi_w2, label = glue::glue("EVPPI (lambda = 1.0): {round(evppi_w2,2)}"),vjust=-1,hjust=-1, colour= "darkred") +
+    scale_y_continuous(expand = c(.25,0)) + theme(text = element_text(family = 'Arial')) +
+  scale_x_continuous(expand=expansion(mult = c(0, .35)),breaks = c(100,250, 500, 1000,2000, 5000, 10000),guide = guide_axis(n.dodge=3))
+p_evsi2
+```
