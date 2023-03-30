@@ -24,6 +24,9 @@ library(tufte)
 knitr::opts_chunk$set(cache.extra = packageVersion('tufte'))
 options(htmltools.dir.version = FALSE)
 
+# knitr::purl(input = "./partial-id-intro.qmd",
+#             output = "./partial-id-intro.r")
+
 
 
 #| echo: true
@@ -62,7 +65,7 @@ delta <-  # Treatment effect varies, but has mean 2 and SD 1.
 sY_1 <- # simulated potential outcome under Tx
   qpois(u[,1],lambda = mean(df[df$D==1,]$Y_1)) + delta
 sY_0 <- # simulated potential outcome under non-Tx
-  qpois(u[,2],lambda=mean(df[df$D==1,]$Y_1))
+  qpois(u[,2],lambda=mean(df[df$D==1,]$Y_1)) + rnorm(n=n)
 
 X <-  # a single covariate that is predictive of the outcome. 
   qnorm(u[,3],mean = 0, sd = 1)
@@ -86,11 +89,23 @@ df <- # Bind it with the general example rows (10 rows)
 #| echo: false
 #| warning: false
 #| message: false
-#| tbl-cap: Perfect Doctor Data
+#| tbl-cap: Example Data
 #| label: tbl-perfdoc1
 df %>% 
   filter(sim==0) %>% 
-  dplyr::select(patient, Y_0, Y_1, delta) %>% 
+  dplyr::select(patient, Y_0, Y_1,D) %>% 
+  kable() %>% 
+  kableExtra::kable_styling()
+
+
+#| echo: false
+#| warning: false
+#| message: false
+#| tbl-cap: Example Data With Unit-Level Treatment Effects
+#| label: tbl-perfdoc1b
+df %>% 
+  filter(sim==0) %>% 
+  dplyr::select(patient, Y_0, Y_1,D,delta) %>% 
   kable() %>% 
   kableExtra::kable_styling()
 
@@ -117,6 +132,9 @@ frac_harmed <-
   summarise(harmed = mean(harmed)) %>% 
   pull(harmed)
 
+y1 <- df %>% filter(D==1) %>% pull(delta)
+frac_harmed <- ecdf(y1)(0)
+
 
 #| fig-cap: Cumulative Distribution Function of the Treatment Effect (delta)
 #| label: fig-distdelta
@@ -126,6 +144,9 @@ frac_harmed <-
 delta_ <- sort(df %>% filter(D==1) %>% pull(delta))
 df_ <- data.frame(x = delta_, y = seq_along(delta_)/length(delta_), region = delta_ < 0 )
 
+br0_ <- unique(sort(c(seq(0,1,0.25),ecdf(y1)(0))))
+br0_l <- paste0(round(br0_,2))
+
 figdelta <- 
   ggplot(df_, aes(x, y)) +
   geom_area(aes(fill = region)) +
@@ -134,7 +155,10 @@ figdelta <-
   scale_fill_manual(values = c('lightgrey', '#C14E4295'), guide = "none") +
   annotate('text', x = 0, y = 0.08, label = 'Harmed', col = "black",size = 4, hjust=1) +
    geom_vline(aes(xintercept = 2),lty=2,lwd=1.1, col = "darkred") + 
-  annotate("text", x = 1.5, y = 0.8, hjust=1, label = "Avg. Treatment Effect", col = "darkred", size = 4)
+  annotate("text", x = 1.5, y = 0.8, hjust=1, label = "Avg. Treatment Effect", col = "darkred", size = 4) +
+  scale_y_continuous(breaks = br0_, labels = br0_l) +
+  geom_point(data = tibble(x = 0, y = ecdf(y1)(0)), aes(x = x, y = y),size=5, pch=10) 
+
 
 figdelta
 
@@ -163,17 +187,45 @@ df %>%
 #| tbl-cap: Mean Outocomes by Treatment Status, and Average Treatment Effect Estimate
 #| label: tbl-att
 
-df %>% 
+df_p <- 
+  df %>% 
   group_by(D) %>% 
   summarise(Y_obs = mean(Y_obs)) %>% 
   mutate(tmp_ = 1) %>% 
   mutate(D = factor(D,levels = c(0,1), labels= c("Untreated","Treated"))) %>% 
   spread(D,Y_obs) %>% 
   mutate(hat_delta = Treated - Untreated) %>% 
-  select(-tmp_) %>% 
+  select(-tmp_)
+
+df_p %>% 
   mutate_all(function(x) paste0(round(x,3))) %>% 
   kable() %>% 
   kable_styling()
+
+
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Quantile Treatment Effects
+#| label: fig-qtt
+#| fig-height: 6
+#| fig-width: 7
+
+F1 <- df %>% filter(D==1) %>% pull(Y_obs)
+F0 <- df %>% filter(D==0) %>% pull(Y_obs)
+taus <- seq(0.05,.95,0.01)
+Q1 <- quantile(F1,taus)
+Q0 <- quantile(F0,taus)
+QTT <- Q1 - Q0
+
+p_qtt <- 
+  tibble(tau = taus, qtt = QTT) %>% 
+  ggplot(aes(x = tau, y = qtt)) + 
+  geom_point() + 
+  scale_y_continuous(limits = c(-2,4)) +
+  labs(x = TeX("$\\tau$"),y = "QTT")
+
+p_qtt
 
 
 #| echo: false
@@ -251,7 +303,15 @@ F_u_wd_ <- # Upper bound
 df_bounds <- 
   tibble(x = delta_, ymax = F.wd.u(delta_), ymin = F.wd.l(delta_)) %>% 
             mutate(region = x<0)
-       
+
+qwdu <- quantile(F.wd.l, tau, type=1)
+qwdl <- quantile(F.wd.u, tau, type=1)
+
+df_wd <- 
+  data.frame(tau = c(tau,tau), bound = c(qwdu,qwdl), type=c(rep("upper",length(qwdu)),rep("lower",length(qwdl)))) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]") %>% 
+  mutate(label = ifelse(type=="upper","Worst-Case\n[Williamson-Downs (1990)]","")) 
+
 
 
 #| echo: false
@@ -261,7 +321,10 @@ df_bounds <-
 #| label: fig-bounddistdelta
 #| fig-height: 6
 #| fig-width: 7
-#|
+
+br_ <- sort(c(seq(0,1,0.25),F.wd.u(0),F.wd.l(0)))
+br_l <- paste0(round(br_,2))
+
 ggplot() +
   geom_line(data = df_, aes(x, y),lwd=1.5, col = "darkred") +
   annotate("text",x=4.5, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
@@ -272,8 +335,37 @@ ggplot() +
   geom_ribbon(data = df_bounds , 
               aes(x = x, ymin = ymin, ymax=ymax, fill = region), alpha = 0.5)  +
   geom_line(data = df_bounds, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
-  geom_line(data = df_bounds, aes(x = x, y = ymax), alpha = 1,lwd=1.25)
+  geom_line(data = df_bounds, aes(x = x, y = ymax), alpha = 1,lwd=1.25) + 
+  scale_y_continuous(breaks = br_, labels = br_l) +
+  geom_point(data = tibble(x = 0, y = F.wd.u(0)), aes(x = x, y = y),size=5, pch=10) +
+  geom_point(data = tibble(x = 0, y = F.wd.l(0)), aes(x = x, y = y),size=5, pch=10)
   
+
+
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-bounds-wd
+#| fig-cap: Worst-Case Treatment Effect Distribution Bounds
+#| fig-width: 10
+#| fig-height: 8
+
+#col_scheme <- c("#FF5733" ) # Williamson and Downs
+col_scheme <- c("black","#FF5733")
+
+df_wd  %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
+  geom_line(lwd=1.25) + 
+  #geom_hline(aes(yintercept = 2), colour = "darkred",lwd=1.25) + 
+  scale_color_manual(values=col_scheme) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none")  +
+  geom_point(data =  tibble(tau = taus, qtt = QTT, type = "True Values", method = "True Values"), aes(x = tau, y = qtt )) 
+  #annotate("text",x = 0.5, y = 2, label = "True Treatment Effect",vjust=-1,colour = "darkred") 
 
 
 
@@ -352,6 +444,14 @@ df_bounds_fl <-
   tibble(x = delta_, ymax = F.fl.u(delta_), ymin = F.fl.l(delta_)) %>% 
             mutate(region = x<0)
 
+qflu <- quantile(F.fl.l, tau, type=1)
+qfll <- quantile(F.fl.u, tau, type=1)
+
+df_fl <- 
+  data.frame(tau = c(tau,tau), bound = c(qflu,qfll), type=c(rep("upper",length(qflu)),rep("lower",length(qfll)))) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)") %>% 
+  mutate(label = ifelse(type=="upper","Frandsen & Lefgrens (2021)","")) 
+
 
 
 #| echo: false
@@ -361,7 +461,11 @@ df_bounds_fl <-
 #| label: fig-flbounddistdelta
 #| fig-height: 6
 #| fig-width: 7
-#|
+
+
+br_wd <- sort(c(seq(0,1,0.25),F.wd.u(0),F.wd.l(0),F.fl.u(0),F.fl.l(0)))
+br_wd_l <- paste0(round(br_wd,2))
+
 ggplot() +
   geom_line(data = df_, aes(x, y),lwd=1.5, col = "darkred") +
   annotate("text",x=4.5, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
@@ -375,8 +479,39 @@ ggplot() +
   geom_line(data = df_bounds, aes(x = x, y = ymin), alpha = 0.5) +
   geom_line(data = df_bounds, aes(x = x, y = ymax), alpha = 0.5) +
   geom_line(data = df_bounds_fl, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
-  geom_line(data = df_bounds_fl, aes(x = x, y = ymax), alpha = 1,lwd=1.25)
+  geom_line(data = df_bounds_fl, aes(x = x, y = ymax), alpha = 1,lwd=1.25) +
+    scale_y_continuous(breaks = br_wd, labels = br_wd_l) + 
+  geom_point(data = tibble(x = 0, y = F.fl.u(0)), aes(x = x, y = y),size=5, pch=10) +
+  geom_point(data = tibble(x = 0, y = F.fl.l(0)), aes(x = x, y = y),size=5, pch=10)
   
+
+
+
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-bounds-fl
+#| fig-cap: Fransden-Lefgren Treatment Effect Distribution Bounds
+#| fig-width: 10
+#| fig-height: 8
+
+#col_scheme <- c("#FF5733" ) # Williamson and Downs
+col_schemefl <- c("#FF5733","darkred","#7DC4CC")
+
+df_wd  %>% 
+  bind_rows(df_fl) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
+  geom_line(lwd=1.25) + 
+  #geom_hline(aes(yintercept = 2), colour = "darkred",lwd=1.25) + 
+  scale_color_manual(values=col_schemefl) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none")  +
+  geom_point(data =  tibble(tau = taus, qtt = QTT, type = "True Values", method = "True Values"), aes(x = tau, y = qtt )) 
+  #annotate("text",x = 0.5, y = 2, label = "True Treatment Effect",vjust=-1,colour = "darkred") 
 
 
 
@@ -475,6 +610,14 @@ df_bounds_flX <-
   tibble(x = delta_, ymax = F.flX.u(delta_), ymin = F.flX.l(delta_)) %>% 
             mutate(region = x<0)
 
+qflXu <- quantile(F.flX.l, tau, type=1)
+qflXl <- quantile(F.flX.u, tau, type=1)
+
+df_flX <- 
+  data.frame(tau = c(tau,tau), bound = c(qflXu,qflXl), type=c(rep("upper",length(qflXu)),rep("lower",length(qflXl)))) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)\nWith Covariates") %>% 
+  mutate(label = ifelse(type=="upper","Frandsen & Lefgrens (2021)\nWith Covariates","")) 
+
 
 
 #| echo: false
@@ -484,7 +627,11 @@ df_bounds_flX <-
 #| label: fig-flboundXdistdelta
 #| fig-height: 6
 #| fig-width: 7
-#|
+
+
+br_wdX <- sort(c(seq(0,1,0.25),F.wd.u(0),F.wd.l(0),F.fl.u(0),F.fl.l(0),F.flX.u(0),F.flX.l(0)))
+br_wdX_l <- paste0(round(br_wdX,2))
+
 ggplot() +
   geom_line(data = df_, aes(x, y),lwd=1.5, col = "darkred") +
   annotate("text",x=4.5, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
@@ -499,8 +646,40 @@ ggplot() +
   geom_line(data = df_bounds_fl, aes(x = x, y = ymin), alpha = 0.5) +
   geom_line(data = df_bounds_fl, aes(x = x, y = ymax), alpha = 0.5) +
   geom_line(data = df_bounds_flX, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
-  geom_line(data = df_bounds_flX, aes(x = x, y = ymax), alpha = 1,lwd=1.25)
+  geom_line(data = df_bounds_flX, aes(x = x, y = ymax), alpha = 1,lwd=1.25) +
+  geom_point(data = tibble(x = 0, y = F.flX.u(0)), aes(x = x, y = y),size=5, pch=10) +
+  geom_point(data = tibble(x = 0, y = F.flX.l(0)), aes(x = x, y = y),size=5, pch=10) + 
+  scale_y_continuous(breaks = br_wdX, labels = br_wdX_l) 
   
+
+
+
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-bounds-flX
+#| fig-cap: Fransden-Lefgren Treatment Effect Distribution Bounds With Covariates
+#| fig-width: 10
+#| fig-height: 8
+
+#col_scheme <- c("#FF5733" ) # Williamson and Downs
+col_schemeflX <- c("#FF5733","darkred","#7DC4CC","#0A2E36")
+
+df_wd  %>% 
+  bind_rows(df_fl) %>% 
+  bind_rows(df_flX) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
+  geom_line(lwd=1.25) + 
+  #geom_hline(aes(yintercept = 2), colour = "darkred",lwd=1.25) + 
+  scale_color_manual(values=col_schemeflX) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none")  +
+  geom_point(data =  tibble(tau = taus, qtt = QTT, type = "True Values", method = "True Values"), aes(x = tau, y = qtt )) 
+  #annotate("text",x = 0.5, y = 2, label = "True Treatment Effect",vjust=-1,colour = "darkred") 
 
 
 
@@ -559,4 +738,9 @@ ggplot() +
  
 
 
+
+
+
+## knitr::purl(input = here("blog/drafts/partial-id-intro/partial-id-intro.qmd"),
+##             output = here("blog/drafts/partial-id-intro/partial-id-intro.r"))
 

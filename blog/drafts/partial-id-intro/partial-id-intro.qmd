@@ -1,6 +1,6 @@
 ---
-title: "Part 1: Extending the Policy Evaluation Toolkit"
-subtitle: "In Praise of the Cumulative Density Function as a Tool for Causal Inference"
+title: "Extending the Policy Evaluation Toolkit"
+subtitle: "The Cumulative Distribution Function as the Unsung Hero of Causal Inference"
 author: John Graves
 date: "`r Sys.Date()`"
 categories: [Partial Identification, Causal Inference]
@@ -55,15 +55,61 @@ library(tufte)
 knitr::opts_chunk$set(cache.extra = packageVersion('tufte'))
 options(htmltools.dir.version = FALSE)
 
+# knitr::purl(input = "./partial-id-intro.qmd",
+#             output = "./partial-id-intro.r")
+
 ```
 
 # Introduction
 
-# Casual Inference as a Missing Data Problem
+<div>
+
+Suppose a policymaker is considering the choice to implement and/or extend a policy that aims to improve health outcome $Y$ (e.g., survival). The policymaker comes to you and asks for a full-scale evaluation to inform this decision. You have at your disposal observational data before and after a similar policy change---or, if resources and time are in your favor, you may elect to prospectively design an evaluation of the policy change. 
+
+Take a moment to think through the methods you might draw on, and the quantities of interest you might estimate with those methods. In all likelihood you are probably considering estimating an **average treatment effect on the treated**, or perhaps a **complier average treatment effect,** which are the workhorse estimands across the vast program and policy evaluation literature. 
+
+To estimate these quantities of interest you might draw on difference-in-differences design, or perhaps an instrumental variables analysis. Alternatively, if you able to design a prospective study, you might implement a randomized evaluation of the policy change. 
+
+Now step back for a moment and consider what might guide the policymaker's decision *independent* of what you can actually estimate in your evaluation. What criteria might she be interested in to inform her choice? 
+
+1. The policy intervention improves outcomes, on average, among those treated. 
+2. The policy intervention incurs little-to-no harm among those treated. 
+3. The policy has a treatment effect of at least some threshold amount for the majority of those treated. 
+
+Each of these seem like reasonable and justifiable criteria to make policy decisions. 
+
+Now map each of these decision criteria to the parameters of interest you can estimate. Assuming your study is adequately powered, **the only quantity you can directly estimate is #1.** That is, you will likely be able to inform decisions based on the average treatment effect---but you will very likely have little to nothing to say about whether anyone was harmed, or more generally what the distribution of the treatment effect looks like in the affected population. 
+
+The goal of this blog series is to extend the policy evaluation toolkit to provide practitioners with the tools to estimate #2 and #3. In addition, we will provide additional tools to produce bounds on estimates of #1 under minimal assumptions---which can then be narrowed (at the limit, into a single point estimate) by layering in additional assumptions, or by making stronger assumptions. 
+
+<div style="float: left; position: relative; top: 0px; padding: 30px;">
+![Searching for the keys under the difference-in-differences lamppost.](../../../media/lamppost-dd.png)
+</div>
+
+How does this differ from usual practice in the social sciences? Econometrics, and the social science in general, tends to start from the perspective of *point identification*. This is the idea that we need to go as far out on the identification limb as possible to get a single, scalar point estimate of our quantity of interest.
+
+But now think about the assumptions often needed to achieve point identification---particularly in observational research settings. These assumptions are often strong, perhaps even heroic. This dilutes the credibility of policy evaluations, opening up legitimate questions over whether decisions based on the evaluations are grounded in realistic assessments of policy impact. 
+
+But what if you could produce actionable information with *fewer* assumptions. For example, you might be able to rule out harmful treatment effects without having to make heroic assumptions. Or if the actionable treatment effect threshold is $\lambda$ (i.e., the policy is worth implementing if the average treatment effect is at least $\lambda$), what if you could rule out that the true average treatment effect is less than $\lambda$ while making fewer difficult/impossible-to-validate identifying assumptions? 
+
+## The Cumulative Distribution Function as the Unsung Hero of Causal Inference
+
+
+</div>
 
 
 
-Let's start with the basic perfect doctor data, but with "randomized" treatment. First, let's generate then look at the first 10 rows of the data:
+# The "Perfect" Doctor Data
+
+Our running example will draw from an adapted and extended version of the "perfect doctor" data often used to teach causal inference methods [@rubinTeachingStatisticalInference2004; @imbensCausalInferenceStatistics2015]. 
+
+In the classic "Perfect Doctor" example, we are given potential outcomes for ten sample units. **Critically, we observe potential outcomes under treatment *and* control**. The outcome is envisioned as survival, so an increase in the outcome is interpreted as improving health, while a decrease is interpreted as harm. 
+
+In the original example, treatment is endogenously determined by a "perfect" doctor who always selects the treatment that benefits the patient. That is, if a given patient would survive 5 years with the treatment, but 7 years without it, the doctor would choose not to treat the patient. By comparison, if the patient would survive 3 years with the treatment, but 1 year without, the doctor would "assign" the patient to the treated group.
+
+This example will differentiate from the original in the following way: **we will (for now) assume that treatment assignment is exogenous**---that is, it is randomly assigned. We'll bring back in  endogenous treatment assignment mechanism in later posts that cover partial identification approachs in observational data settings. So in that sense, the data we'll use is "perfect" only in the sense that we observe both potetnial outcomes for each unit---not that the doctor is perfect in terms of matching up each patient to the best treatment for them. 
+
+Let's now look at 10 rows of the example data: 
 
 
 ```{r}
@@ -103,7 +149,7 @@ delta <-  # Treatment effect varies, but has mean 2 and SD 1.
 sY_1 <- # simulated potential outcome under Tx
   qpois(u[,1],lambda = mean(df[df$D==1,]$Y_1)) + delta
 sY_0 <- # simulated potential outcome under non-Tx
-  qpois(u[,2],lambda=mean(df[df$D==1,]$Y_1))
+  qpois(u[,2],lambda=mean(df[df$D==1,]$Y_1)) + rnorm(n=n)
 
 X <-  # a single covariate that is predictive of the outcome. 
   qnorm(u[,3],mean = 0, sd = 1)
@@ -115,6 +161,7 @@ df_sim <- # Construct the final data.
          X = X) %>% 
   mutate(delta = Y_1 - Y_0) %>% 
   mutate(D = as.integer(runif(nrow(.))<.5)) %>% 
+  #mutate(D = as.integer(Y_1>=Y_0)) %>% 
   mutate(Y_obs = case_when(D==1 ~ Y_1, TRUE ~ Y_0)) %>% 
   mutate(sim = 1)
 
@@ -122,25 +169,89 @@ df <- # Bind it with the general example rows (10 rows)
   df %>% 
   bind_rows(df_sim)
 
+df0 <- df
+
+params <- 
+  list(
+    N = 2e3,
+    sigma_sq_X = 1.0,
+    sigma_sq_epsilon = 0.3,
+    delta = 2
+  )
+params <- with(params,
+               modifyList(params,list(
+                 r_squared = 1 - sigma_sq_epsilon,
+                 beta = sqrt(1 - sigma_sq_epsilon),
+                 Sigma = matrix(c(sigma_sq_X,0,0,sigma_sq_epsilon),
+                                byrow=TRUE, nrow = 2, ncol = 2))))
+
+gen_data <- function(params) {
+  with(params, 
+       mvrnorm(n = N, mu = c(0,0), Sigma = Sigma)) %>% 
+    data.frame() %>% 
+    as_tibble() %>% 
+    set_names(c("X","epsilon")) %>% 
+    mutate(Y_i0 = 2 + params$beta * X + epsilon) %>% 
+    mutate(Y_i1 = Y_i0 + rnorm(nrow(.),params$delta,1)) %>% 
+    mutate(random = runif(nrow(.))) %>% 
+    mutate(D = as.integer(row_number()<=(params$N)/2)) %>% 
+    arrange(random) %>% 
+    select(-random) %>% 
+    mutate(Y = D * Y_i1 + (1 - D) * Y_i0) %>% 
+    select(Y,Y_1 = Y_i1, Y_0 = Y_i0, D,X) %>% 
+    mutate(Y_obs = case_when(D==1 ~ Y_1, TRUE ~ Y_0))
+}
+
+set.seed(123)
+df <- params %>% gen_data() %>% 
+  ungroup() %>% 
+  mutate(sim = ifelse(row_number() %in% 1:10,0,1)) %>% 
+  mutate(patient = ifelse(sim==1,LETTERS[row_number()],NA)) %>% 
+  mutate(delta = Y_1 - Y_0)
+
+df %>% head(n=10) %>% kable() %>% 
+    kable_styling() 
+
+
 ```
+
 
 ```{r}
 #| echo: false
 #| warning: false
 #| message: false
-#| tbl-cap: Perfect Doctor Data
+#| tbl-cap: Example Data
 #| label: tbl-perfdoc1
 df %>% 
   filter(sim==0) %>% 
-  dplyr::select(patient, Y_0, Y_1, delta) %>% 
+  head(n = 10) %>% 
+  dplyr::select(patient, Y_0, Y_1,D) %>% 
   kable() %>% 
   kableExtra::kable_styling()
 ```
 
 
-At this point we have a full picture of the data: for each unit, we observe their outcome *both* under treatment, and under non-treatment. For this reason, we can calculate the unit-level treatment effect (`delta`) as the difference between the two. 
+In the data shown in @tbl-perfdoc1, the first five rows are treated while the last five are untreated.
 
-When we can calculate `delta`, we can do all sorts of things. For example, we can look at the distribution of `delta` to get a sense of the distribution of the treatment effect. @fig-test below plots this distribution. 
+## Unit-Level Treatment Effects
+
+Becuase (for now) we observe both potential outcomes, we have all the information we need to define unit-level treatment effects. Let's define `delta` as the unit-level difference in potential outcomes:
+
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| tbl-cap: Example Data With Unit-Level Treatment Effects
+#| label: tbl-perfdoc1b
+df %>% 
+  filter(sim==0) %>% 
+  dplyr::select(patient, Y_0, Y_1,D,delta) %>% 
+  kable() %>% 
+  kableExtra::kable_styling()
+```
+
+Because we can calculate `delta` for each unit, we can do all sorts of things. For example, we can look at the distribution of `delta` in our full sample (of 10,000 units) to get a sense of the distribution of the treatment effect. @fig-test below plots this distribution. 
  
 ```{r}
 #| fig-cap: Distribution of the Treatment Effect (delta)
@@ -157,7 +268,23 @@ df %>%
   geom_vline(aes(xintercept = 0),lty=3) 
 ```
 
-We can see from @fig-test that the treatment effect is *negative* for some individuals. To calculate the fraction of the treated population was harmed vs. improved with treatment, we can plot the empirical cumulative density function (eCDF) of `delta` among the treated observations: 
+We see from @fig-test that the treatment effect is positive, on average, but is *negative* for some individuals. This is relevant, actionable information not captured by the average treatment effect alone!
+
+## Decision Thresholds for Policy Evaluation 
+
+Before we move on, it's worth pausing for a minute to consider the evidence thresholds or decision rules that might be relevant to a policymaker. Doing so can help higlight the limitations of standard approaches to policy evaluation, and can also help elucidate additional dimensions of exploration partial identification approaches open up. 
+
+Suppose, for example, that a policymaker faces a decision over whether to expand or continue a treatment or program. What rules might she take into consideration when making this decision?
+
+It may be, for example, that the policymaker simply needs the policy or program to be beneficial, on average, in the population. Or, the policymaker may additionally (or solely) want to ensure that the policy does little to no harm---that is, that less than some maximum threshold fraction ($\lambda_1$) of the population is made *worse off* under treatment. Alternatively, the policymaker may wish to ensure that the policy has a minimum treatment effect of at least $\lambda_2$ for a majority of the population. 
+
+These are all reasonable and useful decision criteria. **A key challenge is that even under the most ideal experimental designs, we can't estimate many these quantities of interset---at least, not without some additional (often heroic) assumptions.
+
+## Estimating The Fraction Harmed by Treatment
+
+Before we get to the reasons *why* we often cannot estimate many of the above parameters of interest, let's first calculate one of them in our "perfect" data: the fraction of the population harmed by treatment. 
+
+To estimate this fraction, we can plot the empirical cumulative distribution function (eCDF) of `delta` among the treated observations: [Recall that the CDF for some variable X is the function   $F_X(x)=\mathrm{P}(X \leq x)$]{.aside}
 
 
 ```{r frac_harmed, echo = FALSE}
@@ -167,6 +294,9 @@ frac_harmed <-
   mutate(harmed = as.integer(delta<0))  %>% 
   summarise(harmed = mean(harmed)) %>% 
   pull(harmed)
+
+y1 <- df %>% filter(D==1) %>% pull(delta)
+frac_harmed <- ecdf(y1)(0)
 ```
 
 ```{r figdelta}
@@ -178,6 +308,9 @@ frac_harmed <-
 delta_ <- sort(df %>% filter(D==1) %>% pull(delta))
 df_ <- data.frame(x = delta_, y = seq_along(delta_)/length(delta_), region = delta_ < 0 )
 
+br0_ <- unique(sort(c(seq(0,1,0.25),ecdf(y1)(0))))
+br0_l <- paste0(round(br0_,2))
+
 figdelta <- 
   ggplot(df_, aes(x, y)) +
   geom_area(aes(fill = region)) +
@@ -186,22 +319,30 @@ figdelta <-
   scale_fill_manual(values = c('lightgrey', '#C14E4295'), guide = "none") +
   annotate('text', x = 0, y = 0.08, label = 'Harmed', col = "black",size = 4, hjust=1) +
    geom_vline(aes(xintercept = 2),lty=2,lwd=1.1, col = "darkred") + 
-  annotate("text", x = 1.5, y = 0.8, hjust=1, label = "Avg. Treatment Effect", col = "darkred", size = 4)
+  annotate("text", x = 1.5, y = 0.8, hjust=1, label = "Avg. Treatment Effect", col = "darkred", size = 4) +
+  scale_y_continuous(breaks = br0_, labels = br0_l) +
+  geom_point(data = tibble(x = 0, y = ecdf(y1)(0)), aes(x = x, y = y),size=5, pch=10) 
+
 
 figdelta
 ```
 
-The red-shaded region in @fig-distdelta shows that ```r round(frac_harmed*100,0)``` percent of treated samples had a negative (unit-level) treatment effect value for `delta`. This is useful information that is not captured by the average treatment effect value (2.0) shown as a dotted vertical (dark red) line. 
-
-**A major issue, however, is that quantities of interest such as "fraction of population harmed" or "probability that the treatment improves your outcomes by at least X amount" are often NOT recoverable as point estimates without heroic assumptions---even in an experimental setting!**[For example, we might assume that the treatment effect is homogenous, i.e., `delta` is fixed and does not vary across units. In that case, our estimate of the average treatment effect (assuming it is identified) gives us sufficient information on whether people were harmed, or whether the treatment effect was above or below a certain amount. But that requires a **very** strong assmption of homogeneous treatment effects!]{.aside}
+The red-shaded region in @fig-distdelta shows that ```r round(frac_harmed*100,0)``` percent of treated samples had a negative (unit-level) treatment effect value for `delta`.
 
 ## The Fundamental Problem of Causal Inference
 
-Why is that? The simple reason is the running example above was based on a scenario in which we had full information on potential outcomes for each unit in our population. That is, we observed each unit's outcome under treatment, *and* their outcome without treatment. However, this is almost never the case. 
+We have seen above that with perfect data, we can estimate that, on average, the treatment is beneficial: it increases survival by 2 years.  But we can also calculate that ```r round(frac_harmed*100,0)``` percent of the population is harmed. Armed with this information, a policymaker could weigh the average benefit of the policy against the observation that some people are made worse off. 
 
-What is more typical is to observe just one realization of the potential outcomes. Among treated units we observe the realized value of $Y(1)$ , and among untreated units we observe the realized value of $Y(0)$. Each unit's other potential outcome is therefore missing from observation. 
+A major challenge arises, however, because we almost never observe the perfect data we were able to draw on above. 
+
+
+What is the underlying issue that precludes us from estimating the quantities of interest?  The simple reason is the running example above was based on a scenario in which we had full information on potential outcomes for each unit in our population. That is, we observed each unit's outcome under treatment, *and* their outcome without treatment. Because of this, we can calculate a unit-level treatment effect estimate `delta` and plot the CDF of *that* (@fig-distdelta). However, this is an idealized data scenario that is almost never the case. 
+
+As many intoductory causal inferences course will teach you, what is more typical is to observe just one realization of the potential outcomes. Among treated units we observe the realized value of $Y(1)$ , and among untreated units we observe the realized value of $Y(0)$. Each unit's other (counterfactual) potential outcome is therefore missing from observation. 
 
 @tbl-perfdoc2 re-casts the data above to show what we would *observe* in most real-world settings. That is, we only observe values in the column `Y_1` for treated observations; and likewise, we only observe values in the column `Y_0` for untreated observations. We then collect these observed values in a new column called `Y_obs` (Y-observed). And because we do not observe both potential outcomes for each unit, we cannot calculate unit-leve values of `delta` at all. 
+
+
 ```{r tbl-perfdoc2}
 #| echo: false
 #| warning: false
@@ -222,11 +363,30 @@ df %>%
 ```
 
 
+
+
+## Scale Dependence of Common Estimators
+
+In addition to expanding the toolkit of policy- and decision-relevant parameters that can be estimated, analyzing policy impact using the CDF also helps highlight how we can test & address another issue: scale-dependence of common estimators.  This is an area covered in detail in @rothWhenParallelTrends2023, and in our my own recent work on Difference-in-Differences for categorical outcomes [@gravesDifferenceindifferencesCategoricalOutcomes2022]. 
+
+- In short, for parallel trends assumptions to be robust to functional form, need to identify the *entire distribution of counterfactual outcomes* for the treated group. 
+  - parallel trends assumption is invariant to transformations
+if and only if a “parallel trends”-type assumption holds for the entire cumulative distribution function (CDF) of untreated potential outcomes
+- There are three cases in which this condition holds: 
+  1. If the distribution of potential outcomes is the same for both groups, as occurs under random assignment of treatment. 
+  2. If the potential outcome distributions for each group are stable over time. 
+  3. A hybrid of the first two cases in which the population is a mixture of a sub-population that is effectively randomized between treatment and control and another sub-population that has non-random treatment status but stable potential outcome distributions across time.
+  - demonstrate that parallel trends is either a functional form restriction or a combination of unconfoundedness and stationary assumptions
+
+
 ## How Can We Recover Useful Treatment Effect Parameters?
 
 In this example, we have simulated data under a hypothetical experimental design (i.e., treatment `D` is exogenously assigned and is therefore independent of the potential outcomes). 
 
-We can therefore estimate the average treatment effect on the treatment based on the mean difference beetween treated and untreated groups:
+What can we point identify using the marginal distributions of the outcome (by treatment status) under this experimental design? 
+
+First, we can identify Average Treatment Effect on the Treated (ATT):[The ATT is given by $ATT = E[Y_{1t}-Y_{0t}|D=1]$]{.aside}
+
 
 ```{r tblatt}
 #| echo: false
@@ -235,29 +395,73 @@ We can therefore estimate the average treatment effect on the treatment based on
 #| tbl-cap: Mean Outocomes by Treatment Status, and Average Treatment Effect Estimate
 #| label: tbl-att
 
-df %>% 
+df_p <- 
+  df %>% 
   group_by(D) %>% 
   summarise(Y_obs = mean(Y_obs)) %>% 
   mutate(tmp_ = 1) %>% 
   mutate(D = factor(D,levels = c(0,1), labels= c("Untreated","Treated"))) %>% 
   spread(D,Y_obs) %>% 
   mutate(hat_delta = Treated - Untreated) %>% 
-  select(-tmp_) %>% 
+  select(-tmp_)
+
+df_p %>% 
   mutate_all(function(x) paste0(round(x,3))) %>% 
   kable() %>% 
   kable_styling()
 ```
 
-Ok, this is getting us somewhere---but it is still fairly restrictive. We know that, *on average*, the treatment was beneficial in extending survival, but we can't rule out that it harmed some units in the population. 
+This is getting us somewhere. We learn that, *on average*, the treatment was beneficial in extending survival---but crutially, we can't rule out that it harmed some units in the population. 
 
-Is it possible to recover useful and actionable information on this question? Yes, it is! It turns out that we can't *point identify* some of the quantities of interest, but we can *set* identify it. In other words, we can put upper and lower bounds on the fraction of the population harmed by treatment, or on the fraction of the population with treatment effect value greater than or less than some critical value $lambda$. 
+We can also define the Quantile Treatment Effect on the Treated (QTT):
+
+$$
+Q T T(\tau)=F_{Y_{1 t} \mid D=1}^{-1}(\tau)-F_{Y_{0 t} \mid D=1}^{-1}(\tau)
+$$
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Quantile Treatment Effects
+#| label: fig-qtt
+#| fig-height: 6
+#| fig-width: 7
+
+F1 <- df %>% filter(D==1) %>% pull(Y_obs)
+F0 <- df %>% filter(D==0) %>% pull(Y_obs)
+taus <- seq(0.05,.95,0.01)
+Q1 <- quantile(F1,taus)
+Q0 <- quantile(F0,taus)
+QTT <- Q1 - Q0
+
+p_qtt <- 
+  tibble(tau = taus, qtt = QTT) %>% 
+  ggplot(aes(x = tau, y = qtt)) + 
+  geom_point() + 
+  scale_y_continuous(limits = c(-2,4)) +
+  labs(x = TeX("$\\tau$"),y = "QTT")
+
+p_qtt
+```
+
+
+Is it possible to recover useful and actionable information on this question? Yes, it is! It turns out that we can't *point identify* some quantities of interest without strong assumptions, but we can *set* identify them with minimal assumptions. In other words, without having to go do extraorinarily lenghts in terms of assumptions, we can put upper and lower bounds on the fraction of the population harmed by treatment, or on the fraction of the population with treatment effect value greater than or less than some critical value $lambda$. 
 
 # Treatment Effect Bounds 
 
+This blog series is constructed to provide information on the theory (mostly intuition) and the code needed to construct treatment effect bounds on both the distribution of the treatment effect, and on the average treatment effect. Both approches share a common DNA in that they start from a "worst-case" method that makes the absolute minimal assumptions. We can then start to tighten the estimated bounds--either by conditioning on (exogenous) covariates, or by making assumptions on the joint distribution of potential outcomes and/or the joint distribution of unit-level observations at different points in time. 
+
+We will get into the mechanics and theory in later sections, and will only run through a quick example of the utility of these methods below. 
+
 ## Bounds on the Distribution of the Treatment Effect 
 
+We'll first construct worst-case bounds based on techniques covered in @abbringEconometricEvaluationSocial2007, @williamsonProbabilisticArithmeticNumerical1990 and @frankBestpossibleBoundsDistribution1987.
 
-We'll first construct worst-case bounds based on @williamsonProbabilisticArithmeticNumerical1990.
+> Sharp bounds on the joint distribution of the potential outcomes with identiÖed marginals
+are given by the Frechet-Hoe§ding lower and upper bound distributions, see Heckman and Smith
+(1993), Heckman, Smith, and Clements (1997), and Manski (1997b) for their applications in program evaluation. 
+
 
 ```{r bounds1}
 #| echo: false
@@ -336,8 +540,19 @@ F_u_wd_ <- # Upper bound
 df_bounds <- 
   tibble(x = delta_, ymax = F.wd.u(delta_), ymin = F.wd.l(delta_)) %>% 
             mutate(region = x<0)
-       
+
+qwdu <- quantile(F.wd.l, tau, type=1)
+qwdl <- quantile(F.wd.u, tau, type=1)
+
+df_wd <- 
+  data.frame(tau = c(tau,tau), bound = c(qwdu,qwdl), type=c(rep("upper",length(qwdu)),rep("lower",length(qwdl)))) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]") %>% 
+  mutate(label = ifelse(type=="upper","Worst-Case\n[Williamson-Downs (1990)]","")) 
+
+col_scheme <- c("#7DC4CC","#0A2E36","#FF5733")
+
 ```
+
 
 
 ```{r plotWD}
@@ -348,19 +563,88 @@ df_bounds <-
 #| label: fig-bounddistdelta
 #| fig-height: 6
 #| fig-width: 7
-#| 
+
+br_ <- sort(c(seq(0,1,0.25),F.wd.u(0),F.wd.l(0)))
+br_l <- paste0(round(br_,2))
+
 ggplot() +
   geom_line(data = df_, aes(x, y),lwd=1.5, col = "darkred") +
   annotate("text",x=4.5, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
   labs(x = "x = Treatment Effect", y = TeX("$Pr(\\Delta$<=x)"))+
   scale_fill_manual(values = c('lightgrey', '#C14E4295'), guide = "none") +
-  #geom_line(data = tibble(x = delta_, y = F.wd.l(delta_))) +
-  #geom_line(data = tibble(x = delta_, y = F.wd.u(delta_))) +
   geom_ribbon(data = df_bounds , 
               aes(x = x, ymin = ymin, ymax=ymax, fill = region), alpha = 0.5)  +
   geom_line(data = df_bounds, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
-  geom_line(data = df_bounds, aes(x = x, y = ymax), alpha = 1,lwd=1.25)
+  geom_line(data = df_bounds, aes(x = x, y = ymax), alpha = 1,lwd=1.25) + 
+  scale_y_continuous(breaks = br_, labels = br_l) +
+  geom_point(data = tibble(x = 0, y = F.wd.u(0)), aes(x = x, y = y),size=5, pch=10) +
+  geom_point(data = tibble(x = 0, y = F.wd.l(0)), aes(x = x, y = y),size=5, pch=10)
   
+```
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Worst-Case Bounds on the Average Treatment Effect on the Treated 
+#| label: fig-boundwdatt
+#| fig-height: 3
+#| fig-width: 7
+#| 
+
+attwd <- tibble(delta = delta_,
+       FU = F.wd.l(delta_),
+       FL = F.wd.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>% 
+  mutate(size =1) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) 
+
+
+attwd %>% 
+  mutate(y = 0) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]")))  %>% 
+  ggplot() + 
+  geom_errorbar(aes(y = 0, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
+  scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
+  geom_point(aes(x = 2, y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
+  labs(x = "ATT", y = "") +
+  scale_colour_manual(values = col_scheme[3],name="") +
+  theme(legend.position = "bottom")
+
+
+```
+
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-bounds-wd
+#| fig-cap: Worst-Case Treatment Effect Distribution Bounds 
+#| fig-width: 10
+#| fig-height: 8
+
+#col_scheme <- c("#FF5733" ) # Williamson and Downs
+
+df_wd  %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
+  geom_line(lwd=1.5,colour = "#FF5733") + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none")  +
+  scale_colour_manual(values = col_scheme[3]) +
+  labs(x = TeX("$$\\tau$$"),y=TeX("QoTT($$\\tau$$)"))
+  # geom_point(data =  tibble(tau = taus, qtt = QTT, type = "True Values", method = "True Values"), aes(x = tau, y = qtt ),
+  #            col="darkred") 
+
 
 ```
 
@@ -442,6 +726,14 @@ df_bounds_fl <-
   tibble(x = delta_, ymax = F.fl.u(delta_), ymin = F.fl.l(delta_)) %>% 
             mutate(region = x<0)
 
+qflu <- quantile(F.fl.l, tau, type=1)
+qfll <- quantile(F.fl.u, tau, type=1)
+
+df_fl <- 
+  data.frame(tau = c(tau,tau), bound = c(qflu,qfll), type=c(rep("upper",length(qflu)),rep("lower",length(qfll)))) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)") %>% 
+  mutate(label = ifelse(type=="upper","Frandsen & Lefgrens (2021)","")) 
+
 ```
 
 ```{r FLboundsplot}
@@ -452,7 +744,11 @@ df_bounds_fl <-
 #| label: fig-flbounddistdelta
 #| fig-height: 6
 #| fig-width: 7
-#| 
+
+
+br_wd <- sort(c(seq(0,1,0.25),F.wd.u(0),F.wd.l(0),F.fl.u(0),F.fl.l(0)))
+br_wd_l <- paste0(round(br_wd,2))
+
 ggplot() +
   geom_line(data = df_, aes(x, y),lwd=1.5, col = "darkred") +
   annotate("text",x=4.5, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
@@ -466,10 +762,87 @@ ggplot() +
   geom_line(data = df_bounds, aes(x = x, y = ymin), alpha = 0.5) +
   geom_line(data = df_bounds, aes(x = x, y = ymax), alpha = 0.5) +
   geom_line(data = df_bounds_fl, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
-  geom_line(data = df_bounds_fl, aes(x = x, y = ymax), alpha = 1,lwd=1.25)
+  geom_line(data = df_bounds_fl, aes(x = x, y = ymax), alpha = 1,lwd=1.25) +
+    scale_y_continuous(breaks = br_wd, labels = br_wd_l) + 
+  geom_point(data = tibble(x = 0, y = F.fl.u(0)), aes(x = x, y = y),size=5, pch=10) +
+  geom_point(data = tibble(x = 0, y = F.fl.l(0)), aes(x = x, y = y),size=5, pch=10)
   
 
 ```
+
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Worst-Case Bounds on the Average Treatment Effect on the Treated, by Method
+#| label: fig-boundwdattfl
+#| fig-height: 3
+#| fig-width: 7
+
+
+attfl <- tibble(delta = delta_,
+       FU = F.fl.l(delta_),
+       FL = F.fl.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)" ) %>% 
+  mutate(size = 2) 
+
+attwd <- tibble(delta = delta_,
+       FU = F.wd.l(delta_),
+       FL = F.wd.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>% 
+  mutate(size =1)
+
+attfl %>% 
+  bind_rows(attwd) %>% 
+  mutate(y = 0) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]")))  %>% 
+  ggplot() + 
+  geom_errorbar(aes(y = 0, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
+  scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
+  geom_point(aes(x = 2, y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
+  labs(x = "ATT", y = "") +
+  scale_colour_manual(values = col_scheme[c(1,3)],name="") +
+  theme(legend.position = "bottom")
+
+```
+
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-bounds-fl
+#| fig-cap: Fransden-Lefgren Treatment Effect Distribution Bounds 
+#| fig-width: 10
+#| fig-height: 8
+
+#col_scheme <- c("#FF5733" ) # Williamson and Downs
+
+df_wd  %>% 
+  bind_rows(df_fl) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type)) + 
+  geom_line(lwd=1.25,aes(colour = method)) + 
+  scale_color_manual(values=col_scheme[c(1,3)]) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none")  +
+   labs(x = TeX("$$\\tau$$"),y=TeX("QoTT($$\\tau$$)"))
+
+```
+
 
 Let's get it even tighter with covariates. This is an approach based on @frandsenPartialIdentificationDistribution2021. 
 
@@ -569,6 +942,14 @@ df_bounds_flX <-
   tibble(x = delta_, ymax = F.flX.u(delta_), ymin = F.flX.l(delta_)) %>% 
             mutate(region = x<0)
 
+qflXu <- quantile(F.flX.l, tau, type=1)
+qflXl <- quantile(F.flX.u, tau, type=1)
+
+df_flX <- 
+  data.frame(tau = c(tau,tau), bound = c(qflXu,qflXl), type=c(rep("upper",length(qflXu)),rep("lower",length(qflXl)))) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)\nWith Covariates") %>% 
+  mutate(label = ifelse(type=="upper","Frandsen & Lefgrens (2021)\nWith Covariates","")) 
+
 ```
 
 ```{r FLboudnsXplot}
@@ -579,7 +960,11 @@ df_bounds_flX <-
 #| label: fig-flboundXdistdelta
 #| fig-height: 6
 #| fig-width: 7
-#| 
+
+
+br_wdX <- sort(c(seq(0,1,0.25),F.wd.u(0),F.wd.l(0),F.fl.u(0),F.fl.l(0),F.flX.u(0),F.flX.l(0)))
+br_wdX_l <- paste0(round(br_wdX,2))
+
 ggplot() +
   geom_line(data = df_, aes(x, y),lwd=1.5, col = "darkred") +
   annotate("text",x=4.5, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
@@ -594,11 +979,282 @@ ggplot() +
   geom_line(data = df_bounds_fl, aes(x = x, y = ymin), alpha = 0.5) +
   geom_line(data = df_bounds_fl, aes(x = x, y = ymax), alpha = 0.5) +
   geom_line(data = df_bounds_flX, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
-  geom_line(data = df_bounds_flX, aes(x = x, y = ymax), alpha = 1,lwd=1.25)
+  geom_line(data = df_bounds_flX, aes(x = x, y = ymax), alpha = 1,lwd=1.25) +
+  geom_point(data = tibble(x = 0, y = F.flX.u(0)), aes(x = x, y = y),size=5, pch=10) +
+  geom_point(data = tibble(x = 0, y = F.flX.l(0)), aes(x = x, y = y),size=5, pch=10) + 
+  scale_y_continuous(breaks = br_wdX, labels = br_wdX_l) 
   
 
 ```
 
+
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Worst-Case Bounds on the Average Treatment Effect on the Treated, by Method
+#| label: fig-boundwdattflX
+#| fig-height: 3
+#| fig-width: 7
+
+
+attfl <- tibble(delta = delta_,
+       FU = F.fl.l(delta_),
+       FL = F.fl.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)" ) %>% 
+  mutate(size = 2) 
+
+attflX <- tibble(delta = delta_,
+       FU = F.flX.l(delta_),
+       FL = F.flX.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021) Covariates" ) %>% 
+  mutate(size = 2) 
+
+attwd <- tibble(delta = delta_,
+       FU = F.wd.l(delta_),
+       FL = F.wd.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>% 
+  mutate(size =1)
+
+attfl %>% 
+  bind_rows(attflX) %>% 
+  bind_rows(attwd) %>% 
+  mutate(y = 0) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]")))  %>% 
+  ggplot() + 
+  geom_errorbar(aes(y = 0, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
+  scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
+  geom_point(aes(x = 2, y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
+  labs(x = "ATT", y = "") +
+  scale_colour_manual(values = col_scheme,name="") +
+  theme(legend.position = "bottom")
+
+```
+
+
+
+```{r}
+#| echo: true
+#| message: false
+#| warning: false
+#| code-fold: true
+#| label: fig-bounds-flX
+#| fig-cap: Fransden-Lefgren Treatment Effect Distribution Bounds With Covariates
+#| fig-width: 10
+#| fig-height: 8
+
+df_wd  %>% 
+  bind_rows(df_fl) %>% 
+  bind_rows(df_flX) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021)\nWith Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(type = paste0(type,method)) %>% 
+  ggplot(aes(x = tau, y = bound, group = type)) + 
+  geom_line(lwd=1.25,aes(colour = method)) + 
+  scale_color_manual(values=col_scheme) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label,colour = method)) +
+  scale_x_continuous(breaks = seq(0,1,0.1)) +
+  theme(legend.position = "none")  +
+  labs(x = TeX("$$\\tau$$"),y=TeX("QoTT($$\\tau$$)"))
+  #annotate("text",x = 0.5, y = 2, label = "True Treatment Effect",vjust=-1,colour = "darkred") 
+
+```
+
+
+## Bounds on the Average Treatment Effect
+
+```{r manski, eval = TRUE, echo = FALSE}
+# Manski Bounds
+
+bounds <- list(
+    WC = list(
+        EY1 = list(
+            Z0_u = "maxY",
+            Z0_l = "minY",
+            Z1_u = "Y_1",
+            Z1_l = "Y_1"
+        ),
+        EY0 = list(
+            Z0_u = "Y_0",
+            Z0_l = "Y_0",
+            Z1_u = "maxY",
+            Z1_l = "minY"
+        )
+    ),
+    MTS = list(
+        EY1 = list(
+            Z0_u = "maxY",
+            Z0_l = "Y_1",# Had the untreated group received the treatment (lower values better) they would have no better outcomes than the treated group
+            Z1_u = "Y_1",
+            Z1_l = "Y_1"
+        ),
+        EY0 = list(
+            Z0_u = "Y_0",
+            Z0_l = "Y_0",
+            Z1_u = "Y_0", # Had the untreated group received the treatment (lower values better) they would have no worse outcomes than in the untreated group
+            Z1_l = "minY"
+        )
+    ),
+    MTR = list(
+        EY1 = list(
+            Z0_u = "maxY",
+            Z0_l = "Y_0", # control units cant' get any worse if they get treated
+            Z1_u = "Y_1",
+            Z1_l = "Y_1"
+        ),
+        EY0 = list(
+            Z0_u = "Y_0",
+            Z0_l = "Y_0",
+            Z1_u = "Y_1",  # treated units cant get any better if they get control
+            Z1_l = "minY"
+        )
+    )
+)
+
+
+df_bounds_ <-
+    df %>%
+    mutate(W = ifelse(Y_1>Y_0,1,0)) %>%
+    mutate(Y = ifelse(W==1,Y_1,Y_0)) %>%
+    mutate(Z= D) %>%
+    mutate(maxY = max(Y),
+           minY = min(Y)) %>%
+    group_by(W) %>%
+    summarise_at(vars(Y,maxY,minY),mean)  %>%
+    mutate(PX = 0.5) %>%
+    #mutate(id = "WC") %>%
+    gather(measure,value,-W) %>%
+    unite(measure,measure,W) %>%
+    spread(measure,value) %>%
+    rename(maxY = maxY_0,
+           minY = minY_0) %>%
+    select(-minY_1,-maxY_1) %>%
+    mutate(test = 3) %>%
+    uncount(test) %>%
+    mutate(assumption = c("WC","MTR","MTS"))
+
+bounds_lut <-
+    bounds %>% map_dfr(~(.x %>% data.frame())) %>%
+    mutate(assumption = names(bounds)) %>%
+    gather(measure,quantity,-assumption) %>%
+    separate(measure, into = c("potential_outcome","bound"),sep ="\\.")
+
+df_bounds_manski <-
+    bounds_lut %>%
+    left_join(
+        df_bounds_ %>%
+            gather(quantity,value,-PX_0,-PX_1,-assumption), c("assumption","quantity")
+    ) %>%
+    select(-quantity) %>%
+    unite(bound,potential_outcome,bound) %>%
+    spread(bound,value) %>%
+    mutate(LB = (PX_0 * EY1_Z0_l + PX_1 * EY1_Z1_l) - (PX_0 * EY0_Z0_u + PX_1 * EY0_Z1_u),
+           UB = (PX_0 * EY1_Z0_u + PX_1 * EY1_Z1_u) - (PX_0 * EY0_Z0_l + PX_1 * EY0_Z1_l)) %>%
+    mutate(assumption = factor(assumption, levels = c("WC","MTR","MTS"))) %>% 
+    arrange(assumption)
+
+```
+
+
+```{r}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Worst-Case Bounds on the Average Treatment Effect on the Treated, by Method
+#| label: fig-boundmanski
+#| fig-height: 6
+#| fig-width: 7
+
+
+attfl <- tibble(delta = delta_,
+       FU = F.fl.l(delta_),
+       FL = F.fl.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)" ) %>% 
+  mutate(size = 2) 
+
+attflX <- tibble(delta = delta_,
+       FU = F.flX.l(delta_),
+       FL = F.flX.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021) Covariates" ) %>% 
+  mutate(size = 2) 
+
+attwd <- tibble(delta = delta_,
+       FU = F.wd.l(delta_),
+       FL = F.wd.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>% 
+  mutate(size =1)
+
+att_manski_wc <- 
+  df_bounds_manski %>% 
+  filter(assumption == "WC") %>% 
+  select(upper = UB, 
+         lower = LB) %>% 
+  mutate(method = "Worst-Case\n[Manski]")
+
+att_manski_mtr <- 
+  df_bounds_manski %>% 
+  filter(assumption == "MTR") %>% 
+  select(upper = UB, 
+         lower = LB) %>% 
+  mutate(method = "Monotone Treatment Response\n[Manski]")
+
+att_manski_mts <- 
+  df_bounds_manski %>% 
+  filter(assumption == "MTS") %>% 
+  select(upper = UB, 
+         lower = LB) %>% 
+  mutate(method = "Monotone Treatment Selection\n[Manski]")
+
+p <- 
+  attfl %>% 
+  bind_rows(attflX) %>% 
+  bind_rows(attwd) %>% 
+  bind_rows(att_manski_wc) %>% 
+  bind_rows(att_manski_mtr) %>% 
+  bind_rows(att_manski_mts) %>% 
+  mutate(y = 0) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]",
+      "Worst-Case\n[Manski]", "Monotone Treatment Response\n[Manski]",
+      "Monotone Treatment Selection\n[Manski]")))  %>% 
+  ggplot() + 
+  geom_errorbar(aes(y = y, x = lower, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
+  facet_grid(method~.,switch="y") +
+  scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
+  geom_point(aes(x = 2, y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
+  labs(x = "ATT", y = "") +
+  scale_colour_aaas() +
+  theme(legend.position = "none",strip.text.y.left = element_text(angle=0,hjust=1),
+        strip.placement = "outside")
+p
+```
+
+# Decision Rules
 
 
 ```{r lambda1}
@@ -662,4 +1318,9 @@ ggplot() +
 
 ```
 
+
+```{r , eval = FALSE}
+knitr::purl(input = here::here("blog/drafts/partial-id-intro/partial-id-intro.qmd"),
+            output = here::here("blog/drafts/partial-id-intro/partial-id-intro.r"))
+```
 
