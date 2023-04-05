@@ -160,7 +160,8 @@ df_sim <- # Construct the final data.
          Y_0 = sY_0,
          X = X) %>% 
   mutate(delta = Y_1 - Y_0) %>% 
-  mutate(D = as.integer(runif(nrow(.))<.5)) %>% 
+  mutate(D = as.integer(runif(nrow(.))<.5)) %>%
+  mutate(U = rnorm(nrow(.))) %>% 
   #mutate(D = as.integer(Y_1>=Y_0)) %>% 
   mutate(Y_obs = case_when(D==1 ~ Y_1, TRUE ~ Y_0)) %>% 
   mutate(sim = 1)
@@ -169,48 +170,59 @@ df <- # Bind it with the general example rows (10 rows)
   df %>% 
   bind_rows(df_sim)
 
-df0 <- df
+
+```
+
+```{r simfldata, eval = FALSE}
+
+# This code simulates the experimental data using the DGF in Frandsen and Lefgrens (2021)
 
 params <- 
   list(
     N = 2e3,
     sigma_sq_X = 1.0,
     sigma_sq_epsilon = 0.3,
-    delta = 2
+    delta = 1,
+    sigma_sq_delta = 1
   )
 params <- with(params,
                modifyList(params,list(
                  r_squared = 1 - sigma_sq_epsilon,
                  beta = sqrt(1 - sigma_sq_epsilon),
+                 alpha_1 = -0.5 * (sigma_sq_delta / sigma_sq_epsilon),
                  Sigma = matrix(c(sigma_sq_X,0,0,sigma_sq_epsilon),
                                 byrow=TRUE, nrow = 2, ncol = 2))))
+params <- with(params,
+               modifyList(params,list(
+                 sigma_sq_eta = sigma_sq_delta - (alpha_1^2)*sigma_sq_epsilon
+               )))
 
 gen_data <- function(params) {
+  
   with(params, 
        mvrnorm(n = N, mu = c(0,0), Sigma = Sigma)) %>% 
     data.frame() %>% 
     as_tibble() %>% 
     set_names(c("X","epsilon")) %>% 
-    mutate(Y_i0 = 2 + params$beta * X + epsilon) %>% 
-    mutate(Y_i1 = Y_i0 + rnorm(nrow(.),params$delta,1)) %>% 
+    mutate(eta_i = rnorm(nrow(.),mean = 0,sd = params$sigma_sq_eta)) %>% 
+    mutate(alpha_0 = params$delta) %>% 
+    mutate(delta_i = alpha_0 + params$alpha_1 * epsilon + eta_i) %>% 
+    mutate(Y_i0 = params$beta * X + epsilon) %>% 
+    mutate(Y_i1 = Y_i0 + delta_i) %>% 
     mutate(random = runif(nrow(.))) %>% 
     mutate(D = as.integer(row_number()<=(params$N)/2)) %>% 
     arrange(random) %>% 
     select(-random) %>% 
     mutate(Y = D * Y_i1 + (1 - D) * Y_i0) %>% 
-    select(Y,Y_1 = Y_i1, Y_0 = Y_i0, D,X) %>% 
-    mutate(Y_obs = case_when(D==1 ~ Y_1, TRUE ~ Y_0))
+    select(Y,Y_0 = Y_i0,Y_1 = Y_i1,D,X,delta_i) %>% 
+    mutate(delta = Y_1 - Y_0)
 }
 
 set.seed(123)
 df <- params %>% gen_data() %>% 
-  ungroup() %>% 
-  mutate(sim = ifelse(row_number() %in% 1:10,0,1)) %>% 
-  mutate(patient = ifelse(sim==1,LETTERS[row_number()],NA)) %>% 
-  mutate(delta = Y_1 - Y_0)
-
-df %>% head(n=10) %>% kable() %>% 
-    kable_styling() 
+  mutate(sim = ifelse(row_number() %in% 1:10, 0,1)) %>% 
+  mutate(Y_obs = Y) %>% 
+  mutate(patient = ifelse(sim==0,LETTERS[row_number()],NA))  
 
 
 ```
@@ -582,7 +594,7 @@ ggplot() +
   
 ```
 
-```{r}
+```{r, eval = FALSE}
 #| echo: false
 #| warning: false
 #| message: false
@@ -592,11 +604,15 @@ ggplot() +
 #| fig-width: 7
 #| 
 
-attwd <- tibble(delta = delta_,
+attwd <- 
+  tibble(delta = delta_,
        FU = F.wd.l(delta_),
        FL = F.wd.u(delta_)) %>% 
   mutate(diffU = c(0,diff(FU)),
          diffL = c(0,diff(FL))) %>% 
+  filter((FU>0|FL>0)&(FU<1|FL<1)) %>% 
+  mutate(diffdelta = c(0,diff(delta))) %>% 
+  arrange(delta) %>% 
   summarise(upper = sum(delta*diffU),
             lower = sum(delta*diffL)) %>% 
   mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>% 
@@ -610,7 +626,7 @@ attwd %>%
   ggplot() + 
   geom_errorbar(aes(y = 0, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
   scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
-  geom_point(aes(x = 2, y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_point(aes(x = mean(df$delta), y = 0), colour = "darkred", size=8, alpha = 0.5) + 
   geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
   labs(x = "ATT", y = "") +
   scale_colour_manual(values = col_scheme[3],name="") +
@@ -802,13 +818,13 @@ attwd <- tibble(delta = delta_,
   mutate(size =1)
 
 attfl %>% 
-  bind_rows(attwd) %>% 
+  #bind_rows(attwd) %>% 
   mutate(y = 0) %>% 
   mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]")))  %>% 
   ggplot() + 
   geom_errorbar(aes(y = 0, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
   scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
-  geom_point(aes(x = 2, y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_point(aes(x = mean(df$delta), y = 0), colour = "darkred", size=8, alpha = 0.5) + 
   geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
   labs(x = "ATT", y = "") +
   scale_colour_manual(values = col_scheme[c(1,3)],name="") +

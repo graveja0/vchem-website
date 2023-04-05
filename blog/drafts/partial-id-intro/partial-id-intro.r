@@ -29,60 +29,59 @@ options(htmltools.dir.version = FALSE)
 
 
 
-#| echo: true
-#| warning: false
-#| message: false
-#| code-fold: true
-#| code-summary: "Generate the perfect doctor data"
+params <- 
+  list(
+    N = 2e3,
+    sigma_sq_X = 1.0,
+    sigma_sq_epsilon = 0.3,
+    delta = 1,
+    sigma_sq_delta = 1
+  )
+params <- with(params,
+               modifyList(params,list(
+                 r_squared = 1 - sigma_sq_epsilon,
+                 beta = sqrt(1 - sigma_sq_epsilon),
+                 alpha_1 = -0.5 * (sigma_sq_delta / sigma_sq_epsilon),
+                 Sigma = matrix(c(sigma_sq_X,0,0,sigma_sq_epsilon),
+                                byrow=TRUE, nrow = 2, ncol = 2))))
+params <- with(params,
+               modifyList(params,list(
+                 sigma_sq_eta = sigma_sq_delta - (alpha_1^2)*sigma_sq_epsilon
+               )))
 
-df <- # basic perfect doctor data (from Rubin)
-  data.frame(patient = LETTERS[1:10],
-            Y_1 = c(7,5,5,7,4,10,1,5,3,9),
-             Y_0 = c(5,3,8,8,3,1,6,8,8,4))  %>% 
-  mutate(Y_0 = c(1,6,1,8,2,1,10,6,7,8)) %>% 
-  mutate(delta = Y_1 - Y_0) %>% 
-  mutate(D = c(1,1,1,1,1,0,0,0,0,0)) %>% 
-  mutate(Y_obs = case_when(D==1 ~ Y_1, TRUE ~ Y_0)) %>% 
-  mutate(sim = 0) %>% 
-  mutate(X = rnorm(10,mean = 0, sd = 1)) 
+gen_data <- function(params) {
+  
+  with(params, 
+       mvrnorm(n = N, mu = c(0,0), Sigma = Sigma)) %>% 
+    data.frame() %>% 
+    as_tibble() %>% 
+    set_names(c("X","epsilon")) %>% 
+    mutate(eta_i = rnorm(nrow(.),mean = 0,sd = params$sigma_sq_eta)) %>% 
+    mutate(alpha_0 = params$delta) %>% 
+    mutate(delta_i = alpha_0 + params$alpha_1 * epsilon + eta_i) %>% 
+    mutate(Y_i0 = params$beta * X + epsilon) %>% 
+    mutate(Y_i1 = Y_i0 + delta_i) %>% 
+    mutate(random = runif(nrow(.))) %>% 
+    mutate(D = as.integer(row_number()<=(params$N)/2)) %>% 
+    arrange(random) %>% 
+    select(-random) %>% 
+    mutate(Y = D * Y_i1 + (1 - D) * Y_i0) %>% 
+    select(Y,Y_0 = Y_i0,Y_1 = Y_i1,D,X,delta_i) %>% 
+    mutate(delta = Y_1 - Y_0)
+}
 
-# Simulate additional data from a copula that defines the correlation b/t potential outcomes, and
-# between a single covariate X and the potential outcomes. 
-m <- 3 # number of columns
-n <- 10000-10 # sample size
-corXY <- 0.8 # corelation between potential outcomes and X
-sigma <- matrix(c(1,0.6,corXY,0.6,1,corXY,corXY,corXY,1),nrow = 3) # correlation matrix
+set.seed(123)
+df <- params %>% gen_data() %>% 
+  mutate(sim = ifelse(row_number() %in% 1:10, 0,1)) %>% 
+  mutate(Y_obs = Y) %>% 
+  mutate(patient = ifelse(sim==0,LETTERS[row_number()],NA))  
 
-# Sample the joint CDF quantiles from a multivariate normal centered at 0
-set.seed(100)
-z <- mvrnorm(n,mu=rep(0, m),Sigma=sigma,empirical=T) 
-u <- pnorm(z) # get the quantiles associated with each value
+hist(df$delta)
 
-# Generate the variables
-delta <-  # Treatment effect varies, but has mean 2 and SD 1. 
-  rnorm(n,mean = 2, sd = 1)
+df %>% head(n=10) %>% kable() %>% 
+  kable_styling()
 
-sY_1 <- # simulated potential outcome under Tx
-  qpois(u[,1],lambda = mean(df[df$D==1,]$Y_1)) + delta
-sY_0 <- # simulated potential outcome under non-Tx
-  qpois(u[,2],lambda=mean(df[df$D==1,]$Y_1)) + rnorm(n=n)
 
-X <-  # a single covariate that is predictive of the outcome. 
-  qnorm(u[,3],mean = 0, sd = 1)
-
-df_sim <- # Construct the final data. 
-  tibble(patient = glue("sim{1:n}")) %>% 
-  mutate(Y_1 = sY_1,
-         Y_0 = sY_0,
-         X = X) %>% 
-  mutate(delta = Y_1 - Y_0) %>% 
-  mutate(D = as.integer(runif(nrow(.))<.5)) %>% 
-  mutate(Y_obs = case_when(D==1 ~ Y_1, TRUE ~ Y_0)) %>% 
-  mutate(sim = 1)
-
-df <- # Bind it with the general example rows (10 rows)
-  df %>% 
-  bind_rows(df_sim)
 
 
 
@@ -93,6 +92,7 @@ df <- # Bind it with the general example rows (10 rows)
 #| label: tbl-perfdoc1
 df %>% 
   filter(sim==0) %>% 
+  head(n = 10) %>% 
   dplyr::select(patient, Y_0, Y_1,D) %>% 
   kable() %>% 
   kableExtra::kable_styling()
@@ -227,6 +227,8 @@ p_qtt <-
 
 p_qtt
 
+quantile(df$delta,0.9)
+
 
 #| echo: false
 #| message: false
@@ -312,6 +314,8 @@ df_wd <-
   mutate(method = "Worst-Case\n[Williamson-Downs (1990)]") %>% 
   mutate(label = ifelse(type=="upper","Worst-Case\n[Williamson-Downs (1990)]","")) 
 
+col_scheme <- c("#7DC4CC","#0A2E36","#FF5733")
+
 
 
 #| echo: false
@@ -330,8 +334,6 @@ ggplot() +
   annotate("text",x=4.5, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
   labs(x = "x = Treatment Effect", y = TeX("$Pr(\\Delta$<=x)"))+
   scale_fill_manual(values = c('lightgrey', '#C14E4295'), guide = "none") +
-  #geom_line(data = tibble(x = delta_, y = F.wd.l(delta_))) +
-  #geom_line(data = tibble(x = delta_, y = F.wd.u(delta_))) +
   geom_ribbon(data = df_bounds , 
               aes(x = x, ymin = ymin, ymax=ymax, fill = region), alpha = 0.5)  +
   geom_line(data = df_bounds, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
@@ -340,6 +342,46 @@ ggplot() +
   geom_point(data = tibble(x = 0, y = F.wd.u(0)), aes(x = x, y = y),size=5, pch=10) +
   geom_point(data = tibble(x = 0, y = F.wd.l(0)), aes(x = x, y = y),size=5, pch=10)
   
+
+
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Worst-Case Bounds on the Average Treatment Effect on the Treated
+#| label: fig-boundwdatt
+#| fig-height: 3
+#| fig-width: 7
+#|
+
+## attwd <-
+##   tibble(delta = delta_,
+##        FU = F.wd.l(delta_),
+##        FL = F.wd.u(delta_)) %>%
+##   mutate(diffU = c(0,diff(FU)),
+##          diffL = c(0,diff(FL))) %>%
+##   filter((FU>0|FL>0)&(FU<1|FL<1)) %>%
+##   mutate(diffdelta = c(0,diff(delta))) %>%
+##   arrange(delta) %>%
+##   summarise(upper = sum(delta*diffU),
+##             lower = sum(delta*diffL)) %>%
+##   mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>%
+##   mutate(size =1) %>%
+##   mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]")))
+## 
+## 
+## attwd %>%
+##   mutate(y = 0) %>%
+##   mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]")))  %>%
+##   ggplot() +
+##   geom_errorbar(aes(y = 0, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) +
+##   scale_y_continuous(limits = c(-1,1), breaks = NULL) +
+##   geom_point(aes(x = mean(df$delta), y = 0), colour = "darkred", size=8, alpha = 0.5) +
+##   geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") +
+##   labs(x = "ATT", y = "") +
+##   scale_colour_manual(values = col_scheme[3],name="") +
+##   theme(legend.position = "bottom")
+## 
+## 
 
 
 #| echo: true
@@ -352,20 +394,20 @@ ggplot() +
 #| fig-height: 8
 
 #col_scheme <- c("#FF5733" ) # Williamson and Downs
-col_scheme <- c("black","#FF5733")
 
 df_wd  %>% 
   mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
   mutate(type = paste0(type,method)) %>% 
   ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
-  geom_line(lwd=1.25) + 
-  #geom_hline(aes(yintercept = 2), colour = "darkred",lwd=1.25) + 
-  scale_color_manual(values=col_scheme) + 
+  geom_line(lwd=1.5,colour = "#FF5733") + 
   geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
   scale_x_continuous(breaks = seq(0,1,0.1)) +
   theme(legend.position = "none")  +
-  geom_point(data =  tibble(tau = taus, qtt = QTT, type = "True Values", method = "True Values"), aes(x = tau, y = qtt )) 
-  #annotate("text",x = 0.5, y = 2, label = "True Treatment Effect",vjust=-1,colour = "darkred") 
+  scale_colour_manual(values = col_scheme[3]) +
+  labs(x = TeX("$$\\tau$$"),y=TeX("QoTT($$\\tau$$)"))
+  # geom_point(data =  tibble(tau = taus, qtt = QTT, type = "True Values", method = "True Values"), aes(x = tau, y = qtt ),
+  #            col="darkred") 
+
 
 
 
@@ -487,6 +529,50 @@ ggplot() +
 
 
 
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Worst-Case Bounds on the Average Treatment Effect on the Treated, by Method
+#| label: fig-boundwdattfl
+#| fig-height: 3
+#| fig-width: 7
+
+
+attfl <- tibble(delta = delta_,
+       FU = F.fl.l(delta_),
+       FL = F.fl.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)" ) %>% 
+  mutate(size = 2) 
+
+attwd <- tibble(delta = delta_,
+       FU = F.wd.l(delta_),
+       FL = F.wd.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>% 
+  mutate(size =1)
+
+attfl %>% 
+  #bind_rows(attwd) %>% 
+  mutate(y = 0) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]")))  %>% 
+  ggplot() + 
+  geom_errorbar(aes(y = 0, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
+  scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
+  geom_point(aes(x = mean(df$delta[df$D==1]), y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
+  labs(x = "ATT", y = "") +
+  scale_colour_manual(values = col_scheme[c(1,3)],name="") +
+  theme(legend.position = "bottom")
+
+
+
 #| echo: true
 #| message: false
 #| warning: false
@@ -497,21 +583,18 @@ ggplot() +
 #| fig-height: 8
 
 #col_scheme <- c("#FF5733" ) # Williamson and Downs
-col_schemefl <- c("#FF5733","darkred","#7DC4CC")
 
 df_wd  %>% 
   bind_rows(df_fl) %>% 
   mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
   mutate(type = paste0(type,method)) %>% 
-  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
-  geom_line(lwd=1.25) + 
-  #geom_hline(aes(yintercept = 2), colour = "darkred",lwd=1.25) + 
-  scale_color_manual(values=col_schemefl) + 
+  ggplot(aes(x = tau, y = bound, group = type)) + 
+  geom_line(lwd=1.25,aes(colour = method)) + 
+  scale_color_manual(values=col_scheme[c(1,3)]) + 
   geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
   scale_x_continuous(breaks = seq(0,1,0.1)) +
   theme(legend.position = "none")  +
-  geom_point(data =  tibble(tau = taus, qtt = QTT, type = "True Values", method = "True Values"), aes(x = tau, y = qtt )) 
-  #annotate("text",x = 0.5, y = 2, label = "True Treatment Effect",vjust=-1,colour = "darkred") 
+   labs(x = TeX("$$\\tau$$"),y=TeX("QoTT($$\\tau$$)"))
 
 
 
@@ -654,6 +737,61 @@ ggplot() +
 
 
 
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Worst-Case Bounds on the Average Treatment Effect on the Treated, by Method
+#| label: fig-boundwdattflX
+#| fig-height: 3
+#| fig-width: 7
+
+
+attfl <- tibble(delta = delta_,
+       FU = F.fl.l(delta_),
+       FL = F.fl.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)" ) %>% 
+  mutate(size = 2) 
+
+attflX <- tibble(delta = delta_,
+       FU = F.flX.l(delta_),
+       FL = F.flX.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021) Covariates" ) %>% 
+  mutate(size = 2) 
+
+attwd <- tibble(delta = delta_,
+       FU = F.wd.l(delta_),
+       FL = F.wd.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>% 
+  mutate(size =1)
+
+attfl %>% 
+  bind_rows(attflX) %>% 
+  bind_rows(attwd) %>% 
+  mutate(y = 0) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]")))  %>% 
+  ggplot() + 
+  geom_errorbar(aes(y = 0, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
+  scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
+  geom_point(aes(x = 2, y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
+  labs(x = "ATT", y = "") +
+  scale_colour_manual(values = col_scheme,name="") +
+  theme(legend.position = "bottom")
+
+
+
 #| echo: true
 #| message: false
 #| warning: false
@@ -663,24 +801,196 @@ ggplot() +
 #| fig-width: 10
 #| fig-height: 8
 
-#col_scheme <- c("#FF5733" ) # Williamson and Downs
-col_schemeflX <- c("#FF5733","darkred","#7DC4CC","#0A2E36")
-
 df_wd  %>% 
   bind_rows(df_fl) %>% 
   bind_rows(df_flX) %>% 
-  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)"     ,       "Frandsen & Lefgrens (2021)\nWith Covariates", "Worst-Case\n[Williamson-Downs (1990)]"))) %>% 
   mutate(type = paste0(type,method)) %>% 
-  ggplot(aes(x = tau, y = bound, group = type, colour = method)) + 
-  geom_line(lwd=1.25) + 
-  #geom_hline(aes(yintercept = 2), colour = "darkred",lwd=1.25) + 
-  scale_color_manual(values=col_schemeflX) + 
-  geom_dl(method = list("last.points",hjust=1),aes(label = label)) +
+  ggplot(aes(x = tau, y = bound, group = type)) + 
+  geom_line(lwd=1.25,aes(colour = method)) + 
+  scale_color_manual(values=col_scheme) + 
+  geom_dl(method = list("last.points",hjust=1),aes(label = label,colour = method)) +
   scale_x_continuous(breaks = seq(0,1,0.1)) +
   theme(legend.position = "none")  +
-  geom_point(data =  tibble(tau = taus, qtt = QTT, type = "True Values", method = "True Values"), aes(x = tau, y = qtt )) 
+  labs(x = TeX("$$\\tau$$"),y=TeX("QoTT($$\\tau$$)"))
   #annotate("text",x = 0.5, y = 2, label = "True Treatment Effect",vjust=-1,colour = "darkred") 
 
+
+
+
+# Manski Bounds
+
+bounds <- list(
+    WC = list(
+        EY1 = list(
+            Z0_u = "maxY",
+            Z0_l = "minY",
+            Z1_u = "Y_1",
+            Z1_l = "Y_1"
+        ),
+        EY0 = list(
+            Z0_u = "Y_0",
+            Z0_l = "Y_0",
+            Z1_u = "maxY",
+            Z1_l = "minY"
+        )
+    ),
+    MTS = list(
+        EY1 = list(
+            Z0_u = "maxY",
+            Z0_l = "Y_1",# Had the untreated group received the treatment (lower values better) they would have no better outcomes than the treated group
+            Z1_u = "Y_1",
+            Z1_l = "Y_1"
+        ),
+        EY0 = list(
+            Z0_u = "Y_0",
+            Z0_l = "Y_0",
+            Z1_u = "Y_0", # Had the untreated group received the treatment (lower values better) they would have no worse outcomes than in the untreated group
+            Z1_l = "minY"
+        )
+    ),
+    MTR = list(
+        EY1 = list(
+            Z0_u = "maxY",
+            Z0_l = "Y_0", # control units cant' get any worse if they get treated
+            Z1_u = "Y_1",
+            Z1_l = "Y_1"
+        ),
+        EY0 = list(
+            Z0_u = "Y_0",
+            Z0_l = "Y_0",
+            Z1_u = "Y_1",  # treated units cant get any better if they get control
+            Z1_l = "minY"
+        )
+    )
+)
+
+
+df_bounds_ <-
+    df %>%
+    mutate(W = ifelse(Y_1>Y_0,1,0)) %>%
+    mutate(Y = ifelse(W==1,Y_1,Y_0)) %>%
+    mutate(Z= D) %>%
+    mutate(maxY = max(Y),
+           minY = min(Y)) %>%
+    group_by(W) %>%
+    summarise_at(vars(Y,maxY,minY),mean)  %>%
+    mutate(PX = 0.5) %>%
+    #mutate(id = "WC") %>%
+    gather(measure,value,-W) %>%
+    unite(measure,measure,W) %>%
+    spread(measure,value) %>%
+    rename(maxY = maxY_0,
+           minY = minY_0) %>%
+    select(-minY_1,-maxY_1) %>%
+    mutate(test = 3) %>%
+    uncount(test) %>%
+    mutate(assumption = c("WC","MTR","MTS"))
+
+bounds_lut <-
+    bounds %>% map_dfr(~(.x %>% data.frame())) %>%
+    mutate(assumption = names(bounds)) %>%
+    gather(measure,quantity,-assumption) %>%
+    separate(measure, into = c("potential_outcome","bound"),sep ="\\.")
+
+df_bounds_manski <-
+    bounds_lut %>%
+    left_join(
+        df_bounds_ %>%
+            gather(quantity,value,-PX_0,-PX_1,-assumption), c("assumption","quantity")
+    ) %>%
+    select(-quantity) %>%
+    unite(bound,potential_outcome,bound) %>%
+    spread(bound,value) %>%
+    mutate(LB = (PX_0 * EY1_Z0_l + PX_1 * EY1_Z1_l) - (PX_0 * EY0_Z0_u + PX_1 * EY0_Z1_u),
+           UB = (PX_0 * EY1_Z0_u + PX_1 * EY1_Z1_u) - (PX_0 * EY0_Z0_l + PX_1 * EY0_Z1_l)) %>%
+    mutate(assumption = factor(assumption, levels = c("WC","MTR","MTS"))) %>% 
+    arrange(assumption)
+
+
+
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Worst-Case Bounds on the Average Treatment Effect on the Treated, by Method
+#| label: fig-boundmanski
+#| fig-height: 6
+#| fig-width: 7
+
+
+attfl <- tibble(delta = delta_,
+       FU = F.fl.l(delta_),
+       FL = F.fl.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)" ) %>% 
+  mutate(size = 2) 
+
+attflX <- tibble(delta = delta_,
+       FU = F.flX.l(delta_),
+       FL = F.flX.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021) Covariates" ) %>% 
+  mutate(size = 2) 
+
+attwd <- tibble(delta = delta_,
+       FU = F.wd.l(delta_),
+       FL = F.wd.u(delta_)) %>% 
+  mutate(diffU = c(0,diff(FU)),
+         diffL = c(0,diff(FL))) %>% 
+  summarise(upper = sum(delta*diffU),
+            lower = sum(delta*diffL)) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]" ) %>% 
+  mutate(size =1)
+
+att_manski_wc <- 
+  df_bounds_manski %>% 
+  filter(assumption == "WC") %>% 
+  select(upper = UB, 
+         lower = LB) %>% 
+  mutate(method = "Worst-Case\n[Manski]")
+
+att_manski_mtr <- 
+  df_bounds_manski %>% 
+  filter(assumption == "MTR") %>% 
+  select(upper = UB, 
+         lower = LB) %>% 
+  mutate(method = "Monotone Treatment Response\n[Manski]")
+
+att_manski_mts <- 
+  df_bounds_manski %>% 
+  filter(assumption == "MTS") %>% 
+  select(upper = UB, 
+         lower = LB) %>% 
+  mutate(method = "Monotone Treatment Selection\n[Manski]")
+
+p <- 
+  attfl %>% 
+  bind_rows(attflX) %>% 
+  bind_rows(attwd) %>% 
+  bind_rows(att_manski_wc) %>% 
+  bind_rows(att_manski_mtr) %>% 
+  bind_rows(att_manski_mts) %>% 
+  mutate(y = 0) %>% 
+  mutate(method = factor(method, levels = c("Frandsen & Lefgrens (2021)","Frandsen & Lefgrens (2021) Covariates", "Worst-Case\n[Williamson-Downs (1990)]",
+      "Worst-Case\n[Manski]", "Monotone Treatment Response\n[Manski]",
+      "Monotone Treatment Selection\n[Manski]")))  %>% 
+  ggplot() + 
+  geom_errorbar(aes(y = y, x = lower, xmin = lower, xmax = upper,colour = method),width = 0.8,lwd = 2) + 
+  facet_grid(method~.,switch="y") +
+  scale_y_continuous(limits = c(-1,1), breaks = NULL) + 
+  geom_point(aes(x = 2, y = 0), colour = "darkred", size=8, alpha = 0.5) + 
+  geom_vline(aes(xintercept = 0), lty=3, col = "darkgrey") + 
+  labs(x = "ATT", y = "") +
+  scale_colour_aaas() +
+  theme(legend.position = "none",strip.text.y.left = element_text(angle=0,hjust=1),
+        strip.placement = "outside")
+p
 
 
 #| echo: false
@@ -741,6 +1051,6 @@ ggplot() +
 
 
 
-## knitr::purl(input = here("blog/drafts/partial-id-intro/partial-id-intro.qmd"),
-##             output = here("blog/drafts/partial-id-intro/partial-id-intro.r"))
+## knitr::purl(input = here::here("blog/drafts/partial-id-intro/partial-id-intro.qmd"),
+##             output = here::here("blog/drafts/partial-id-intro/partial-id-intro.r"))
 

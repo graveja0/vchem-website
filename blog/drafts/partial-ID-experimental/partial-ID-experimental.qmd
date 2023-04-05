@@ -113,6 +113,21 @@ tau <-  # Quantiles of the treatment effect distribution to obtain
 
 # Worst-Case Bounds
 
+> Sharp bounds on the distribution of the treatment e§ectó the di§erence between two potential
+> outcomes with identiÖed marginalsó are known in the probability literature. A.N. Kolmogorov
+> posed the question of Önding sharp bounds on the distribution of a sum of two random variables with
+> Öxed marginal distributions. It was Örst solved by Makarov (1981) and later by R¸schendorf (1982)
+> and Frank, Nelsen, and Schweizer (1987) using di§erent techniques. Frank, Nelsen, and Schweizer
+> (1987) showed that their proof based on copulas can be extended to more general functions than
+> the sum. Sharp bounds on the respective distributions of a di§erence, a product, and a quotient
+> of two random variables with Öxed marginals can be found in Williamson and Downs (1990).
+> More recently, Denuit, Genest, and Marceau (1999) extended the bounds for the sum to arbitrary
+> dimensions and provided some applications in Önance and risk management, see Embrechts, Hoeing,
+> and Juri (2003) and McNeil, Frey, and Embrechts (2005) for more discussions and additional
+> references.
+>
+> -   [Fan and Park (2009)](https://www.princeton.edu/~erp/Econometrics/Old%20Pdfs/fan.pdf)
+
 This section will construct worst-case bounds based on Williamson and Downs (1990).
 
 $\begin{aligned} & F_{\Delta}^L(t)=\sup _y \max \left\{F_1(y)-F_0(y-t), 0\right\}, \\ & F_{\Delta}^U(t)=1+\inf _y \min \left\{F_1(y)-F_0(y-t), 0\right\}\end{aligned}$
@@ -157,10 +172,15 @@ F_u_wd_ <- # <3>
   assign("nobs", length(delta_), envir = environment(F.wd.u))
 
 ```
-1. Calculate the lower bound values
-2. This code turns the lower bound quantile values into an empirical CDF object. 
-3. Calculate the upper bound values
-4. This code turns the lower bound quantile values into an empirical CDF object. 
+
+## Lower Bounds
+
+## Upper Bounds
+
+1.  Calculate the lower bound values
+2.  This code turns the lower bound quantile values into an empirical CDF object.
+3.  Calculate the upper bound values
+4.  This code turns the lower bound quantile values into an empirical CDF object.
 
 Now let's look at the bounds for the quantile of the Treated Effect on the Treated (QoTT), i.e., the bounds on various quantiles of the treatment effect distribution.
 
