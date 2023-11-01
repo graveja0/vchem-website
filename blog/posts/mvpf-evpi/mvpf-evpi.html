@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 <meta name="author" content="John Graves">
-<meta name="dcterms.date" content="2023-03-24">
+<meta name="dcterms.date" content="2023-11-01">
 
 <title>Vanderbilt Center for Health Economic Modeling - Welfare Analysis Meets Decision Theory</title>
 <style>
@@ -4865,7 +4865,7 @@ return!"\t\n\x0B\f\r                　\u2028\u2029
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="../../../index.html" class="sidebar-item-text sidebar-link">
- <span class="menu-text">Main Website</span></a>
+ <span class="menu-text">Vanderbilt Center for Health Economic Modeling</span></a>
   </div>
 </li>
         <li class="sidebar-item">
@@ -4890,7 +4890,10 @@ return!"\t\n\x0B\f\r                　\u2028\u2029
   <li><a href="#the-opportunity-cost-of-imperfect-information" id="toc-the-opportunity-cost-of-imperfect-information" class="nav-link" data-scroll-target="#the-opportunity-cost-of-imperfect-information">The Opportunity Cost of Imperfect Information</a></li>
   <li><a href="#net-welfare-benefit" id="toc-net-welfare-benefit" class="nav-link" data-scroll-target="#net-welfare-benefit">Net Welfare Benefit</a></li>
   <li><a href="#from-net-welfare-benefit-to-value-of-information" id="toc-from-net-welfare-benefit-to-value-of-information" class="nav-link" data-scroll-target="#from-net-welfare-benefit-to-value-of-information">From Net Welfare Benefit to Value of Information</a></li>
-  <li><a href="#the-welfare-loss-from-imperfect-information" id="toc-the-welfare-loss-from-imperfect-information" class="nav-link" data-scroll-target="#the-welfare-loss-from-imperfect-information">The Welfare Loss from Imperfect Information</a></li>
+  <li><a href="#the-welfare-loss-from-imperfect-information" id="toc-the-welfare-loss-from-imperfect-information" class="nav-link" data-scroll-target="#the-welfare-loss-from-imperfect-information">The Welfare Loss from Imperfect Information</a>
+  <ul class="collapse">
+  <li><a href="#estimating-the-expected-welfare-loss" id="toc-estimating-the-expected-welfare-loss" class="nav-link" data-scroll-target="#estimating-the-expected-welfare-loss">Estimating the Expected Welfare Loss</a></li>
+  </ul></li>
   <li><a href="#summary-and-next-steps" id="toc-summary-and-next-steps" class="nav-link" data-scroll-target="#summary-and-next-steps">Summary and Next Steps</a></li>
   </ul>
 </nav>
@@ -4924,7 +4927,7 @@ return!"\t\n\x0B\f\r                　\u2028\u2029
     <div>
     <div class="quarto-title-meta-heading">Published</div>
     <div class="quarto-title-meta-contents">
-      <p class="date">March 24, 2023</p>
+      <p class="date">November 1, 2023</p>
     </div>
   </div>
   
@@ -5081,7 +5084,9 @@ E_{\boldsymbol{\pi}} \big [ L_{\alpha^*} \big ]  = E_{\boldsymbol{\pi}} \big [ \
 <p>The expected welfare loss in <a href="#eq-expected-loss">Equation 6</a> is also known as the <strong>expected value of perfect information</strong> <span class="citation" data-cites="jacksonValueInformationAnalysis2022 wilsonPracticalGuideValue2015">(<a href="#ref-jacksonValueInformationAnalysis2022" role="doc-biblioref">Jackson et al. 2022</a>; <a href="#ref-wilsonPracticalGuideValue2015" role="doc-biblioref">Wilson 2015</a>)</span>:</p>
 <p><span class="math display">\[
 E_{\boldsymbol{\pi}} \big [ L_{\alpha^*} \big ]  = EVPI(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda)
-\]</span> ### Estimating the Expected Welfare Loss</p>
+\]</span></p>
+<section id="estimating-the-expected-welfare-loss" class="level3">
+<h3 class="anchored" data-anchor-id="estimating-the-expected-welfare-loss">Estimating the Expected Welfare Loss</h3>
 <p>The code below calcualtes the EVPI for the MVPF of the in-kind benefit transfer above, for a particular value of <span class="math inline">\(\lambda\)</span>:</p>
 <div class="cell">
 <div class="sourceCode cell-code" id="cb1"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">23</span>)</span>
@@ -5121,6 +5126,7 @@ E_{\boldsymbol{\pi}} \big [ L_{\alpha^*} \big ]  = EVPI(\boldsymbol{\alpha},\bol
 </div>
 </div>
 </div>
+</section>
 </section>
 <section id="summary-and-next-steps" class="level2">
 <h2 class="anchored" data-anchor-id="summary-and-next-steps">Summary and Next Steps</h2>

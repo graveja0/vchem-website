@@ -7,7 +7,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
 
 
-<title>Vanderbilt Center for Health Economic Modeling - Main Website</title>
+<title>Vanderbilt Center for Health Economic Modeling</title>
 <style>
 code{white-space: pre-wrap;}
 span.smallcaps{font-variant: small-caps;}
@@ -30,6 +30,8 @@ ul.task-list li input[type="checkbox"] {
 <script src="site_libs/quarto-search/fuse.min.js"></script>
 <script src="site_libs/quarto-search/quarto-search.js"></script>
 <meta name="quarto:offset" content="./">
+<script src="site_libs/quarto-listing/list.min.js"></script>
+<script src="site_libs/quarto-listing/quarto-listing.js"></script>
 <script src="site_libs/quarto-html/quarto.js"></script>
 <script src="site_libs/quarto-html/popper.min.js"></script>
 <script src="site_libs/quarto-html/tippy.umd.min.js"></script>
@@ -62,7 +64,38 @@ ul.task-list li input[type="checkbox"] {
     "search-label": "Search"
   }
 }</script>
+<script>
 
+  window.document.addEventListener("DOMContentLoaded", function (_event) {
+    const listingTargetEl = window.document.querySelector('#listing-listing .list');
+    if (!listingTargetEl) {
+      // No listing discovered, do not attach.
+      return; 
+    }
+
+    const options = {
+      valueNames: ['listing-date','listing-title','listing-author','listing-subtitle','listing-image','listing-description',{ data: ['index'] },{ data: ['categories'] },{ data: ['listing-date-sort'] },{ data: ['listing-file-modified-sort'] }],
+      
+      searchColumns: ["listing-date","listing-title","listing-author","listing-subtitle","listing-image","listing-description"],
+    };
+
+    window['quarto-listings'] = window['quarto-listings'] || {};
+    window['quarto-listings']['listing-listing'] = new List('listing-listing', options);
+
+    if (window['quarto-listing-loaded']) {
+      window['quarto-listing-loaded']();
+    }
+  });
+
+  window.addEventListener('hashchange',() => {
+    if (window['quarto-listing-loaded']) {
+      window['quarto-listing-loaded']();
+    }
+  })
+  </script>
+
+  <script src="https://polyfill.io/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml-full.js" type="text/javascript"></script>
 
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -76,7 +109,7 @@ ul.task-list li input[type="checkbox"] {
       <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar,#quarto-sidebar-glass" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
         <i class="bi bi-layout-text-sidebar-reverse"></i>
       </button>
-      <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Main Website</a></li></ol></nav>
+      <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./index.html">Vanderbilt Center for Health Economic Modeling</a></li></ol></nav>
       <a class="flex-grow-1" role="button" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar,#quarto-sidebar-glass" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
       </a>
     </div>
@@ -96,7 +129,7 @@ ul.task-list li input[type="checkbox"] {
         <li class="sidebar-item">
   <div class="sidebar-item-container"> 
   <a href="./index.html" class="sidebar-item-text sidebar-link active">
- <span class="menu-text">Main Website</span></a>
+ <span class="menu-text">Vanderbilt Center for Health Economic Modeling</span></a>
   </div>
 </li>
         <li class="sidebar-item">
@@ -124,7 +157,7 @@ ul.task-list li input[type="checkbox"] {
 
 <header id="title-block-header" class="quarto-title-block default">
 <div class="quarto-title">
-<h1 class="title">Main Website</h1>
+<h1 class="title">Vanderbilt Center for Health Economic Modeling</h1>
 </div>
 
 
@@ -139,11 +172,102 @@ ul.task-list li input[type="checkbox"] {
 
 </header>
 
-<p><a href="https://blog.datacite.org/schema-org-register-dois/">DOIs for blog posts</a></p>
+<!-- [DOIs for blog posts](https://blog.datacite.org/schema-org-register-dois/) -->
 
 
 
-</main> <!-- /main -->
+
+<div class="quarto-listing quarto-listing-container-default" id="listing-listing">
+<div class="list quarto-listing-default">
+<div class="quarto-post image-right" data-index="0" data-categories="CEA,MVPF" data-listing-date-sort="1698814800000" data-listing-file-modified-sort="1698837884459" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="23">
+<div class="thumbnail">
+<p><a href="./blog/posts/mvpf-evpi/mvpf-evpi.html"> <img src="./blog/posts/mvpf-evpi/media/noun-scale-1588863.png" class="thumbnail-image"> </a></p>
+</div>
+<div class="body">
+<a href="./blog/posts/mvpf-evpi/mvpf-evpi.html">
+<h3 class="no-anchor listing-title">
+Welfare Analysis Meets Decision Theory
+</h3>
+<div class="listing-subtitle">
+Part One: Net Welfare Benefit and the Value of Information
+</div>
+<div class="listing-description">
+<strong>Part one</strong> in a three-part series on how the tools of comparative welfare analysis can be used to refine and design prospective randomized evaluations.
+</div>
+</a>
+</div>
+<div class="metadata">
+<a href="./blog/posts/mvpf-evpi/mvpf-evpi.html">
+<div class="listing-date">
+Nov 1, 2023
+</div>
+<div class="listing-author">
+John Graves
+</div>
+</a>
+</div>
+</div>
+<div class="quarto-post image-right" data-index="1" data-categories="CEA,MVPF" data-listing-date-sort="1698814800000" data-listing-file-modified-sort="1698837620037" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="20">
+<div class="thumbnail">
+<p><a href="./blog/posts/mvpf-evppi/mvpf-evppi.html"> <img src="./blog/posts/mvpf-evppi/media/noun-prioritize-3555436.png" class="thumbnail-image"> </a></p>
+</div>
+<div class="body">
+<a href="./blog/posts/mvpf-evppi/mvpf-evppi.html">
+<h3 class="no-anchor listing-title">
+Welfare Analysis Meets Research Prioritization
+</h3>
+<div class="listing-subtitle">
+Part Two: Using the MVPF to Inform the Direction of Future Research
+</div>
+<div class="listing-description">
+<strong>Part two</strong> in a three-part series on how the tools of comparative welfare analysis can be used to refine and design prospective randomized evaluations.
+</div>
+</a>
+</div>
+<div class="metadata">
+<a href="./blog/posts/mvpf-evppi/mvpf-evppi.html">
+<div class="listing-date">
+Nov 1, 2023
+</div>
+<div class="listing-author">
+John Graves
+</div>
+</a>
+</div>
+</div>
+<div class="quarto-post image-right" data-index="2" data-categories="CEA,MVPF" data-listing-date-sort="1671429600000" data-listing-file-modified-sort="1698837354274" data-listing-date-modified-sort="NaN" data-listing-reading-time-sort="22">
+<div class="thumbnail">
+<p><a href="./blog/posts/mvpf-evsi/mvpf-evsi.html"> <img src="./blog/posts/mvpf-evsi/media/sampling-figure.png" class="thumbnail-image"> </a></p>
+</div>
+<div class="body">
+<a href="./blog/posts/mvpf-evsi/mvpf-evsi.html">
+<h3 class="no-anchor listing-title">
+Welfare Analysis Meets Study Design
+</h3>
+<div class="listing-subtitle">
+Part Three: Using the MVPF to Inform the Design of a Randomized Experiment
+</div>
+<div class="listing-description">
+<strong>Part three</strong> in a three-part series on how the tools of comparative welfare analysis can be used to refine and design prospective randomized evaluations.
+</div>
+</a>
+</div>
+<div class="metadata">
+<a href="./blog/posts/mvpf-evsi/mvpf-evsi.html">
+<div class="listing-date">
+Dec 19, 2022
+</div>
+<div class="listing-author">
+John Graves
+</div>
+</a>
+</div>
+</div>
+</div>
+<div class="listing-no-matching d-none">
+No matching items
+</div>
+</div></main> <!-- /main -->
 <script id="quarto-html-after-body" type="application/javascript">
 window.document.addEventListener("DOMContentLoaded", function (event) {
   const toggleBodyColorMode = (bsSheetEl) => {
@@ -376,7 +500,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
     }
   }
     var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
-      var filterRegex = new RegExp('/' + window.location.host + '/');
+      var filterRegex = new RegExp("https:\/\/graveja0\.github\.io\/vchem-website\/");
     var isInternal = (href) => {
         return filterRegex.test(href) || localhostRegex.test(href);
     }
@@ -392,7 +516,7 @@ window.document.addEventListener("DOMContentLoaded", function (event) {
 });
 </script>
 </div> <!-- /content -->
-<script>var lightboxQuarto = GLightbox({"selector":".lightbox","loop":true,"openEffect":"zoom","closeEffect":"zoom","descPosition":"bottom"});</script>
+<script>var lightboxQuarto = GLightbox({"openEffect":"zoom","descPosition":"bottom","selector":".lightbox","closeEffect":"zoom","loop":true});</script>
 
 
 
