@@ -4,7 +4,7 @@
     "href": "index.html",
     "title": "Vanderbilt Center for Health Economic Modeling",
     "section": "",
-    "text": "Welfare Analysis Meets Decision Theory\n\n\nPart One: Net Welfare Benefit and the Value of Information\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Research Prioritization\n\n\nPart Two: Using the MVPF to Inform the Direction of Future Research\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Study Design\n\n\nPart Three: Using the MVPF to Inform the Design of a Randomized Experiment\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\nNo matching items"
+    "text": "Solving for Probabilistic Sensitivity Analysis Parameter Values\n\n\nTransfinite Scaling for Stable Optimization\n\n\n\n\n\n\n\n\n\nNov 21, 2023\n\n\nJohn Graves, Shawn Garbett, Hanxuan (Astrid) Yu, Jinyi Zhu, Ashley Leech\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Decision Theory\n\n\nPart One: Net Welfare Benefit and the Value of Information\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Research Prioritization\n\n\nPart Two: Using the MVPF to Inform the Direction of Future Research\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Study Design\n\n\nPart Three: Using the MVPF to Inform the Design of a Randomized Experiment\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\nNo matching items"
   },
   {
     "objectID": "blog/posts/mvpf-evsi/mvpf-evsi.html",
@@ -46,7 +46,7 @@
     "href": "blog/posts/mvpf-evpi/mvpf-evpi.html",
     "title": "Welfare Analysis Meets Decision Theory",
     "section": "",
-    "text": "Part one in a three-part series on how the tools of comparative welfare analysis can be used to refine and design prospective randomized evaluations."
+    "text": "Part one in a three-part series on how teh tools of welfare analysis and decision science can be used to inform the direction, scope, and design of research and decision-making."
   },
   {
     "objectID": "blog/posts/mvpf-evpi/mvpf-evpi.html#introduction",
@@ -126,6 +126,272 @@
     "text": "Next Steps\nA this point we have:\n\nExplored the range of current knowledge to ascertain whether future research could help a policymaker’s decision to pursue an in-kind benfefit transfer program.\nDecomposed the value of information to identify the parameters with highest decision leverage.\n\nAs mentioned above, however, our estimates of the value of information are based on a theoretical exercise under which we obtain perfect information on uncertain parameters. In practice, however, we do not have unlimited resources to reduce information uncertainty to zero; we must weigh the costs and benefits of sampling the population—perhaps by carrying out a randomized evaluation of the in-kind benefit transfer—to obtain better, but not perfect, information.\nThe next post in this series will explore different study designs so that we can optimally design a randomized evaluation in such a way as to efficiently gain information to inform the decision."
   },
   {
+    "objectID": "blog/posts/transfinite/transfinite.html",
+    "href": "blog/posts/transfinite/transfinite.html",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "",
+    "text": "We have defined our underlying model (either from bottom up or through backwards conversion) but need to define PSA distributions for model parameters.\nModel draws on literature-based parameters that are reported as means, standard deviations, interquartile ranges, 95% confidence intervals, etc."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#a-common-issue",
+    "href": "blog/posts/transfinite/transfinite.html#a-common-issue",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "",
+    "text": "We have defined our underlying model (either from bottom up or through backwards conversion) but need to define PSA distributions for model parameters.\nModel draws on literature-based parameters that are reported as means, standard deviations, interquartile ranges, 95% confidence intervals, etc."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#a-common-issue-1",
+    "href": "blog/posts/transfinite/transfinite.html#a-common-issue-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "A Common Issue",
+    "text": "A Common Issue\n\nStraightforward to obtain base case values from literature.\nBut how can we define PSA distributions based on limited information?"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#psa-distributions",
+    "href": "blog/posts/transfinite/transfinite.html#psa-distributions",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "PSA Distributions",
+    "text": "PSA Distributions\n\n\n\nParameter Type\nDistribution\n\n\n\n\nProbability\nbeta\n\n\nRate\ngamma\n\n\nUtility weight\nbeta\n\n\nRight skew (e.g., cost)\ngamma, lognormal\n\n\nRelative risks or hazard ratios\nlognormal\n\n\nOdds Ratio\nlogistic"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#example",
+    "href": "blog/posts/transfinite/transfinite.html#example",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Example",
+    "text": "Example\n\nCost parameter reported in literature has interquartile range of $300-$750.\nWhat are the parameters of a PSA distribution such that the 25th percentile is $300 and the 75th percentile is $750?"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#some-options",
+    "href": "blog/posts/transfinite/transfinite.html#some-options",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Some Options",
+    "text": "Some Options\n\nAnalytic formulas for some distributions (normal, gamma, beta).\nFormulas take as their inputs the two values (\\(x_1\\), \\(x_2\\)) and their associated quantiles (\\(p_1\\),\\(p_2\\)).\nFormulas return the PSA distribution parameters that match up to these values."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#some-options-1",
+    "href": "blog/posts/transfinite/transfinite.html#some-options-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Some Options",
+    "text": "Some Options\n\nParameterSolver implemented in Windows, Link\nSee Cook (2010) and Vasco Grilo’s blog post for more.\nThe next few slides provide you with nearly all the tools you’ll need, however."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#example-cost-psa-distribution",
+    "href": "blog/posts/transfinite/transfinite.html#example-cost-psa-distribution",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Example: Cost PSA Distribution",
+    "text": "Example: Cost PSA Distribution\n\nSuppose the interquartile range for a key cost variable is [300,750]\nWe may have obtained this from the literature, from tabulating cost data, or from expert opinions."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#example-cost-psa-distribution-1",
+    "href": "blog/posts/transfinite/transfinite.html#example-cost-psa-distribution-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Example: Cost PSA Distribution",
+    "text": "Example: Cost PSA Distribution\n\n\nSuppose the interquartile range for a key cost variable is [300,750]\nWe may have obtained this from the literature, from tabulating cost data, or from expert opinions.\n\n\n\nx1 = 300\np1 = 0.25\n\nx2 = 750\np2 = 0.75"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-uniform-psa",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-uniform-psa",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Uniform PSA",
+    "text": "Analytic Solution: Uniform PSA\nFor a uniform distribution with minimum \\(a\\) and maximum \\(b\\)\n\\[\na = \\frac{p_2x_1 - p_1x_2}{p_2-p_1}\n\\] \\[\nb = \\frac{(1-p_1)x_2-(1-p_2)x_1}{p_2-p_1}\n\\]"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-uniform-psa-1",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-uniform-psa-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Uniform PSA",
+    "text": "Analytic Solution: Uniform PSA\n\na = ((p2*x1) - (p1 * x2)) / (p2 - p1)\na\n\n[1] 75\n\nb = ((1 - p1)*x2 - (1 - p2)*x1) / (p2 - p1)\nb\n\n[1] 975"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-uniform-psa-2",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-uniform-psa-2",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Uniform PSA",
+    "text": "Analytic Solution: Uniform PSA\n\nqunif(0.25, min = 75, max = 975)\n\n[1] 300\n\nqunif(0.75, min = 75, max = 975)\n\n[1] 750"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-normal-psa",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-normal-psa",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Normal PSA",
+    "text": "Analytic Solution: Normal PSA\n\\[\n\\sigma = \\frac{x_2 - x_1}{\\Phi^{-1}(p_2)-\\Phi^{-1}(p_1)}\n\\]\n\\[\n\\mu = \\frac{x_1\\Phi^{-1}(p_2)-x_2\\Phi^{-1}(p_1)}{\\Phi^{-1}(p_2)-\\Phi^{-1}(p_1)}\n\\]"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-normal-psa-1",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-normal-psa-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Normal PSA",
+    "text": "Analytic Solution: Normal PSA\n\nmu = (qnorm(p2)*x1 - qnorm(p1)*x2) / (qnorm(p2)-qnorm(p1))\nmu\n\n[1] 525\n\nsigma = (x2 - x1) / (qnorm(p2) - qnorm(p1))\nsigma\n\n[1] 333.5855"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-normal-psa-2",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-normal-psa-2",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Normal PSA",
+    "text": "Analytic Solution: Normal PSA\n\nqnorm(0.25, mean = 525, sd = 333.59)\n\n[1] 299.997\n\nqnorm(0.75, mean = 525, sd = 333.59)\n\n[1] 750.003"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-lognormal-psa",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-lognormal-psa",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Lognormal PSA",
+    "text": "Analytic Solution: Lognormal PSA\n\nJust take log of \\(x_1\\) and \\(x_2\\)\n\n\\[\n\\sigma = \\frac{\\ln(x_2) - \\ln(x_1)}{\\Phi^{-1}(p_2)-\\Phi^{-1}(p_1)}\n\\]\n\\[\n\\mu = \\frac{\\ln(x_1)\\Phi^{-1}(p_2)-\\ln(x_2)\\Phi^{-1}(p_1)}{\\Phi^{-1}(p_2)-\\Phi^{-1}(p_1)}\n\\]"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-lognormal-psa-1",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-lognormal-psa-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Lognormal PSA",
+    "text": "Analytic Solution: Lognormal PSA\n\nmu = (qnorm(p2)*log(x1) - qnorm(p1)*log(x2)) / (qnorm(p2)-qnorm(p1))\nmu\n\n[1] 6.161928\n\nsigma = (log(x2) - log(x1)) / (qnorm(p2) - qnorm(p1))\nsigma\n\n[1] 0.6792473"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-lognormal-psa-2",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-lognormal-psa-2",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Lognormal PSA",
+    "text": "Analytic Solution: Lognormal PSA\n\nqlnorm(0.25, mean = 6.1619, sd = 0.67925)\n\n[1] 299.9911\n\nqlnorm(0.75, mean = 6.1619, sd = 0.67925)\n\n[1] 749.9805"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Gamma PSA",
+    "text": "Analytic Solution: Gamma PSA\n\nA bit more involved as it involves finding the root of a function."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-1",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Gamma PSA",
+    "text": "Analytic Solution: Gamma PSA\n\n\nA bit more involved as it involves finding the root of a function.\n\n\n\ngamma_fn &lt;- function(alpha) {\n    x1*qgamma(p2,shape = alpha, scale =1) - x2 * qgamma(p1, shape = alpha, scale = 1)\n}\ncurve(gamma_fn, xlim = c(1,10), col = \"blue\", lwd = 1.5, lty=2)\nabline(a=0,b=0)"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-2",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-2",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Gamma PSA",
+    "text": "Analytic Solution: Gamma PSA\n\n\nRoot (i.e., point where the function crosses the zero line) seems to be between 2 and 4.\n\n\n\ngamma_fn &lt;- function(alpha) {\n    x1*qgamma(p2,shape = alpha, scale =1) - x2 * qgamma(p1, shape = alpha, scale = 1)\n}\ncurve(gamma_fn, xlim = c(1,10), col = \"blue\", lwd = 1.5, lty=2)\nabline(a=0,b=0)"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-3",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-3",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Gamma PSA",
+    "text": "Analytic Solution: Gamma PSA\n\n\nWe’ll search in this range for our \\(\\alpha\\) value.\n\n\n\ngamma_fn &lt;- function(alpha) {\n    x1*qgamma(p2,shape = alpha, scale =1) - x2 * qgamma(p1, shape = alpha, scale = 1)\n}\ncurve(gamma_fn, xlim = c(1,10), col = \"blue\", lwd = 1.5, lty=2)\nabline(a=0,b=0)"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-4",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-4",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Gamma PSA",
+    "text": "Analytic Solution: Gamma PSA\n\nalpha_ &lt;- uniroot(gamma_fn,c(2,4))$root\nalpha_\n\n[1] 2.455801\n\ncalc_beta &lt;- function(x1,p1,alpha) {\n    x1 / qgamma(p1,alpha,1)\n}\n\nbeta_ &lt;- calc_beta(x1 = x1,  p1 = p1, alpha = alpha_)\nbeta_\n\n[1] 230.1627"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-5",
+    "href": "blog/posts/transfinite/transfinite.html#analytic-solution-gamma-psa-5",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Analytic Solution: Gamma PSA",
+    "text": "Analytic Solution: Gamma PSA\n\nqgamma(0.25,shape = 2.4558, scale = 230.16)\n\n[1] 299.9963\n\nqgamma(0.75,shape = 2.4558, scale = 230.16)\n\n[1] 749.9956"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#alternative-optimization",
+    "href": "blog/posts/transfinite/transfinite.html#alternative-optimization",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Alternative: Optimization",
+    "text": "Alternative: Optimization\n\n\nGeneral solution that can be used to solve for parameters of many common PSA distributions (e.g., beta, gamma, etc.).\n\n\n\\[\\min_{\\vec{\\theta} \\in R}\\,\\, (F(x_1|\\vec{\\theta})-p_1)^2+(F(x_2|\\vec{\\theta})-p_2)^2\\]"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#alternative-optimization-1",
+    "href": "blog/posts/transfinite/transfinite.html#alternative-optimization-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Alternative: Optimization",
+    "text": "Alternative: Optimization\n\nRequires cumulative distribution function (CDF), \\(F\\).\nSee Hans W Borchers’ great slides for tips on optimization in R."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#some-advice",
+    "href": "blog/posts/transfinite/transfinite.html#some-advice",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Some Advice",
+    "text": "Some Advice\n\nWe have found that while analytically correct, this optimization formula is not numerically stable.\nTransfinite scaling of the probabilities from CDFs \\(F(.)\\) stabilizes optimization."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#some-advice-1",
+    "href": "blog/posts/transfinite/transfinite.html#some-advice-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Some Advice",
+    "text": "Some Advice\n\n\nWe have found that while analytically correct, this optimization formula is not numerically stable.\nTransfinite scaling of the probabilities from CDFs \\(F(.)\\) stabilizes optimization.\n\\(g(F(.))\\) vs. \\(F(.)\\)\n\n\n\\[\\min_{\\vec{\\theta} \\in R}\\,\\, (g(F(x_1|\\vec{\\theta}))-p_1)^2+(g(F(x_2|\\vec{\\theta}))-p_2)^2\\]"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#stable-optimization",
+    "href": "blog/posts/transfinite/transfinite.html#stable-optimization",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Stable Optimization",
+    "text": "Stable Optimization\n\nFor probabilities, this is the \\(\\text{logit}(p)=\\log \\frac{p}{1-p}=\\log p - \\log (1-p)\\).\nTweaking parameters to converge can still happen.\nExample of theory versus practice."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#stable-optimization-1",
+    "href": "blog/posts/transfinite/transfinite.html#stable-optimization-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Stable Optimization",
+    "text": "Stable Optimization\n\n\nFor probabilities, this is the \\(\\text{logit}(p)=\\log \\frac{p}{1-p}=\\log p - \\log (1-p)\\).\nTweaking parameters to converge can still happen.\nExample of theory versus practice.\n\n\n\\[\\min_{\\vec{\\theta} \\in R} \\sum_{i \\in 1,2}\\,\\, (\\text{logit} (F(x_i|\\vec{\\theta}))-\\text{logit} (p_i))^2\\]"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#transfinite-example-part-1",
+    "href": "blog/posts/transfinite/transfinite.html#transfinite-example-part-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Transfinite Example, Part 1",
+    "text": "Transfinite Example, Part 1\n\n# Transfinite scaling\nTf &lt;- function(x, shape, rate)\n    pgamma(x,shape,rate,log=TRUE) - \n    pgamma(x,shape,rate,log=TRUE, lower.tail = FALSE)\n\n# Function to minimize\nnorm &lt;- function(x1, p1, x2, p2, shape,rate)\n    (Tf(x1, shape, rate)-(log(p1)-log(1-p1)) )^2 +\n    (Tf(x2, shape, rate)-(log(p2)-log(1-p2)) )^2\n\n# Bundle it all together into a single function.\nfn &lt;- function(x) norm(x1, p1, x2, p2, x[1], x[2])"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#transfinite-example-part-2",
+    "href": "blog/posts/transfinite/transfinite.html#transfinite-example-part-2",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Transfinite Example, Part 2",
+    "text": "Transfinite Example, Part 2\n\n# Run general-purpose optimization on the function.\ngamma_optim &lt;- \n  optim(c(0.5, 0.1), # initial parameter guesses\n    fn,\n    gr = function(x) pracma::grad(fn, x),\n    lower=c(-Inf, 1e-5),\n    method = \"L-BFGS-B\",\n    control=list(factr=1e-10, maxit=100))$par\n\n# Note: gamma_optim$par[2] is 1/beta\ngamma_optim\n\n[1] 2.455855553 0.004344879"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#transfinite-example",
+    "href": "blog/posts/transfinite/transfinite.html#transfinite-example",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Transfinite Example",
+    "text": "Transfinite Example\n\n\nOptimization returns \\(\\alpha\\) and \\(1/\\beta\\) for the gamma distribution example.\n\n\n\n# Analytic formula\nalpha_\n\n[1] 2.455801\n\n# Optimization\ngamma_optim[[1]]\n\n[1] 2.455856\n\n\n\n# Analytic formula\nbeta_\n\n[1] 230.1627\n\n# Optimization\n1/gamma_optim[[2]]\n\n[1] 230.156"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#optimization-for-other-distributions",
+    "href": "blog/posts/transfinite/transfinite.html#optimization-for-other-distributions",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Optimization for Other Distributions",
+    "text": "Optimization for Other Distributions\n\nJust swap in the distribution function for the distribution you want to match to (e.g., pbeta rather than pgamma).\nAlso make sure the supplied parameter names match the distribution you’re aiming for."
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#optimization-for-other-distributions-1",
+    "href": "blog/posts/transfinite/transfinite.html#optimization-for-other-distributions-1",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Optimization for Other Distributions",
+    "text": "Optimization for Other Distributions\n\n\nJust swap in the distribution function for the distribution you want to match to (e.g., pbeta rather than pgamma).\nAlso make sure the supplied parameter names match the distribution you’re aiming for.\n\n\n\nTf &lt;- function(x, shape, rate)\n    pgamma(x,shape,rate,log=TRUE) - \n    pgamma(x,shape,rate,log=TRUE, lower.tail = FALSE)"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#optimization-for-other-distributions-2",
+    "href": "blog/posts/transfinite/transfinite.html#optimization-for-other-distributions-2",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Optimization for Other Distributions",
+    "text": "Optimization for Other Distributions\n\n\nJust swap in the distribution function for the distribution you want to match to (e.g., pbeta rather than pgamma).\nAlso make sure the supplied parameter names match the distribution you’re aiming for.\n\n\n\nTf &lt;- function(x, shape, rate)\n    pgamma(x,shape,rate,log=TRUE) - \n    pgamma(x,shape,rate,log=TRUE, lower.tail = FALSE)"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#a-web-based-shiny-tool",
+    "href": "blog/posts/transfinite/transfinite.html#a-web-based-shiny-tool",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "A Web-Based Shiny Tool",
+    "text": "A Web-Based Shiny Tool\nhttps://yuhanxuan.shinyapps.io/shiny4dist/\nAuthor: Hanxuan (Astrid) Yu"
+  },
+  {
+    "objectID": "blog/posts/transfinite/transfinite.html#summary-on-distribution-fitting",
+    "href": "blog/posts/transfinite/transfinite.html#summary-on-distribution-fitting",
+    "title": "Solving for Probabilistic Sensitivity Analysis Parameter Values",
+    "section": "Summary on Distribution Fitting",
+    "text": "Summary on Distribution Fitting\n\nUse analytical formulas if they exist.\nOptimize on \\(\\text{logit}\\) scale.\nAgain, avoid \\(\\log\\) on probabilities, use log=TRUE.\nPlot results for visual check."
+  },
+  {
     "objectID": "blog/drafts/quantile-treatment-effects/quantile-treatment-effects.html",
     "href": "blog/drafts/quantile-treatment-effects/quantile-treatment-effects.html",
     "title": "Quantile Treatment Effects",
@@ -166,6 +432,20 @@
     "title": "Quantile Treatment Effects",
     "section": "Quantile Treatment Effect Estimation in Observational Data",
     "text": "Quantile Treatment Effect Estimation in Observational Data\nNow suppose we do not have the luxury of experimental data, but instead have a treated group and untreated group drawn from observational data. How can we identify and estimate quantile treatment effects?\nThere are a number of approaches we can take here:\n\nEstimate bounds on the quantile treatment effect distribution.\nEstimate QTTs under an assumption of conditional independence, i.e., unconfoudnendess.\nEstimate QTTs using a quantile difference-in-differences (qDID) estimator.\nEstimate QTTs using a changes-in-changes (CiC) estimator (Athey and Imbens 2006).\n\nPartial identification via estimating bounds (#1) will be a focus of our class next week, so we’ll set it aside for now – though note that the qte package can estimate bounds based on the method in Fan and Yu (2012).\nSimilarly, if we think we have enough measured data satisfy an unconfoundedness assumption (analogous to what we do with propensity scores ore matching) we can also estimate (#2) using the qte package.\nOur focus for today will be on approaches (#3) and especially (#4). We’ll also discuss how we can incorporate covariates to improve identifcation of quantile treatment effects.\n\nIntuition for qDID and CiC\nEssentially, we’re going to lean on similar intuition for identifying QTTs as we do for identifying average treatment effects on the treated using difference-in-differences. In the case of quantile effects, however, we will be thinking in terms of how the distribution functions change in an untreated comparison group. We’ll then use these changes as a “stand-in” for the counterfactual change that would have occurred in the treated group absent the treatment.\nThe difference between qDID and CiC essentially boils down to how we think about the counterfactual. Let’s envision two scenarios with observational data for a job training program under which the treatment group is selected predominantly among unemployed individuals with low earnings:\n\nThe pre-intervention earnings at the 50th percentile in the treatment group are $0, and at the 50th percentile of the untreated group, pre-intervention earnings are $5,000. In the post-intervention period, the untreated group’s earnings increase to $6,000 at the 50th percentile, while the treated group’s earnings rise to $3000 at the 50th percentile.\nThe pre-intervention earnings at the 50th percentile in the treatment group are $0, and $0 in earnings corresponds to the 10th percentile of the untreated group’s pre-intervention earnings distribution. In the post period, the untreated group’s earnings remain at $0 at the 10th percentile, while earnings at the 50th percentile in the treated group rise to $3,000.\n\nWhat counterfactual should we use for the treated group? The $1,000 rise in earnings observed at the 50th percentile in the untreated group, even though the baseline value at the 50th percentile was very different than the treated group’s median value? Or, is a better estimate of the counterfactual the experience of $0 earners at the 10th percentile in the untreated group? In short, the former assumption is used for qDID, while the latter assumption is used for CiC.\n\n\nEstimating qDID and CiC\nWith the intuition for both approaches solidified, let’s now construct quantile treatment effect estimates in the observational Lalonde data using each.\nFirst, let’s pull out the outcome values for treated and control groups in the pre (1975) and post-intervention (1978) periods:\n\ny00 &lt;- lalonde.psid %&gt;% \n  filter(treat==0) %&gt;% \n  pull(re75)\n\ny10 &lt;- lalonde.psid %&gt;% \n  filter(treat==1) %&gt;% \n  pull(re75)\n\ny01 &lt;- lalonde.psid %&gt;% \n  filter(treat==0) %&gt;% \n  pull(re78)\n\ny11 &lt;- lalonde.psid %&gt;% \n  filter(treat==1) %&gt;% \n  pull(re78)\n\nWe’ll next define eCDFs and inverse eCDFs for each:\n\neF00 &lt;- ecdf(y00)\ninvF00 &lt;- edfun::edfun(y00)$qfun\n\neF10 &lt;- ecdf(y10)\ninvF10 &lt;- edfun::edfun(y10)$qfun\n\neF01 &lt;- ecdf(y01)\ninvF01 &lt;- edfun::edfun(y01)$qfun\n\neF11 &lt;- ecdf(y11)\ninvF11 &lt;- edfun::edfun(y11)$qfun\n\nThe next thing we need to do is to define a quantile of interest. Let’s estimate for the 75th percentile.\n\nq = 0.75\n\nNext, let’s estimate the observed change in the treated group at the 75th percentile:\n\ninvF11(q)\n\n[1] 9631.9\n\ninvF10(q)\n\n[1] 1809\n\nchange_treated &lt;- invF11(q) - invF10(q)\nchange_treated\n\n[1] 7822.9\n\n\nSo we observe earnings going up by 7823. But what would have happened counterfactually? For this we will appeal to the untreated group’s experience.\nFirst, let’s estimate what change happens at the 75th percentile of the untreated group’s earnings distribution:\n\ninvF01(q)\n\n[1] 29510\n\ninvF00(q)\n\n[1] 26470\n\ncfx_untreated_q75 &lt;- invF01(q) - invF00(q)\ncfx_untreated_q75 \n\n[1] 3040.2\n\n\nTo construct a qDID estimate, we’d simply net out this counterfactual from the observed change in the treated group:\n\nqtt_qDID &lt;- change_treated - cfx_untreated_q75 \nqtt_qDID \n\n[1] 4782.7\n\n\nUsing qDID, we would estimate that the job trainings program increased earnings by $4783.\nNotice, however, that there is a huge difference in earnings at the 75th percentile of the treated group’s pre-intervention earnings distribution ($1809), and the untreated group’s ($26470).\nAs an alternative, we can adopt a Changes-in-Changes model. Recall from above that this model requires an additional step: we must map the earnings value of the treated group at the 75th percentile to the corresponding quantile in the untreated groups pre-intervention earnings distribution. We then use the change in earnings at this different quantile as an estimate of the counterfactual:\n\n# Earnings at the qth quantile of the treated group\ny_q &lt;- invF10(q)\ny_q\n\n[1] 1809\n\n# Find what quantile this maps to in the untreated group's distribution. \nq_star &lt;- eF00(y_q)\nq_star\n\n[1] 0.11365\n\ncfx_CiC &lt;- invF01(q_star) - y_q\ncfx_CiC\n\n[1] -1809\n\nchange_treated &lt;- invF11(q) - invF10(q)\nchange_treated\n\n[1] 7822.9\n\nqtt_CiC &lt;- change_treated - cfx_CiC\nqtt_CiC\n\n[1] 9631.9\n\n\nWhile the above exercises went through estimating a changes-in-changes value by hand, the formal estimator is a bit simpler due to some cancelling out of terms. Specifically, the counterfactual CDF is given by\n\\[\n\\hat F_{Y(0),11}(y) = F_{y,01}(F_{y,00}^{-1}(F_{y,10}(y)))\n\\] where F_{y,00} is the observed CDF for the untreated group in the pre-period, F_{y,10} is the observed CDF for the treated group in the pre period, etc.\nEquivalently, we can estimate the inverse CDF of the counterfactual as:\n\\[\n\\hat F_{Y(0),11}^{-1}(\\tau) = F_{y,01}^{-1}(F_{y,00}(F^{-1}_{y,10}(\\tau)))\n\\] And the treatement effect estimate is given by:\n\\[\n\\Delta_{\\tau}^{CiC} = F_{Y(1),11}^{-1}(\\tau)- \\hat F_{Y(0),11}^{-1}(\\tau)\n\\] Implemented for our example, the QTT for the 75th percentile is\n\ninvF11(q) - invF01(eF00(invF10(q)))\n\n[1] 9631.9\n\n\nwhich is identical to the “by hand” estimate we calculated above.\nAgain, the qte package in R will calculate changes-in-changes estimates for you, along with standard errors. The estimates are slightly different here, owing to some “lumpiness” in the eCDFs and slight differnces in calculating the values at quantiles in the data. However, the QTTs are quite close to what we estimated above:\n\n\n\nThere is also a Stata implementation of the Changes-in-Changes estimator, which can be found here.\n\ndf &lt;- \n  lalonde.psid %&gt;% \n  select(id,re75,re78,treat) %&gt;% \n  gather(year,y,-id,-treat) %&gt;% \n  tibble() %&gt;% \n  mutate(year = ifelse(year==\"re75\",1975,1978))\n\nest_CiC &lt;- CiC(y ~ treat, t = 1978, tmin1=1975, \n               tname = \"year\", idname = \"id\",\n               data = df, probs = c(q), \n               se = TRUE, panel = F)\nsummary(est_CiC)\n\n\nQuantile Treatment Effect:\n        \ntau QTE Std. Error\n0.75    9643.00 1086.24\n\nAverage Treatment Effect:   5089.64\n     Std. Error:        770.35"
+  },
+  {
+    "objectID": "blog/drafts/all-paired-up.html",
+    "href": "blog/drafts/all-paired-up.html",
+    "title": "The Choreography of Causal Effects",
+    "section": "",
+    "text": "Model causal inference theory is based on the idea of potential outcomes. The potential outcome framework is a way of thinking about causality that allows us to formalize the idea of a causal effect. In this framework, we assume that each unit has two potential outcomes: one that would be observed if the unit is treated, and one that would be observed if the unit is not treated. The causal effect of the treatment is the difference between these two potential outcomes."
+  },
+  {
+    "objectID": "blog/drafts/all-paired-up.html#introduction-all-paired-up",
+    "href": "blog/drafts/all-paired-up.html#introduction-all-paired-up",
+    "title": "The Choreography of Causal Effects",
+    "section": "",
+    "text": "Model causal inference theory is based on the idea of potential outcomes. The potential outcome framework is a way of thinking about causality that allows us to formalize the idea of a causal effect. In this framework, we assume that each unit has two potential outcomes: one that would be observed if the unit is treated, and one that would be observed if the unit is not treated. The causal effect of the treatment is the difference between these two potential outcomes."
   },
   {
     "objectID": "blog/drafts/partial-ID-experimental/partial-ID-experimental.html",
@@ -340,7 +620,7 @@
     "href": "blog/index.html",
     "title": "Welcome",
     "section": "",
-    "text": "Welcome\nThe Vanderbilt Center for Health Economic Modeling was launched in 2020 to harness the diverse, internationally-recognized expertise of Vanderbilt researchers in modeling the health and economic consequences of health policy and technology changes worldwide.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Study Design\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Decision Theory\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Research Prioritization\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\nNo matching items"
+    "text": "Welcome\nThe Vanderbilt Center for Health Economic Modeling was launched in 2020 to harness the diverse, internationally-recognized expertise of Vanderbilt researchers in modeling the health and economic consequences of health policy and technology changes worldwide.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nSolving for Probabilistic Sensitivity Analysis Parameter Values\n\n\n\nCEA\n\n\n\n\n\n\n\nJohn Graves, Shawn Garbett, Hanxuan (Astrid) Yu, Jinyi Zhu, Ashley Leech\n\n\nNov 21, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Study Design\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Decision Theory\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Research Prioritization\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\nNo matching items"
   },
   {
     "objectID": "about.html",

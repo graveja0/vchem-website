@@ -2,6 +2,7 @@
   {
     "listing": "/index.html",
     "items": [
+      "/blog/posts/transfinite/transfinite.html",
       "/blog/posts/mvpf-evpi/mvpf-evpi.html",
       "/blog/posts/mvpf-evppi/mvpf-evppi.html",
       "/blog/posts/mvpf-evsi/mvpf-evsi.html"
@@ -10,6 +11,7 @@
   {
     "listing": "/blog/index.html",
     "items": [
+      "/blog/posts/transfinite/transfinite.html",
       "/blog/posts/mvpf-evsi/mvpf-evsi.html",
       "/blog/posts/mvpf-evpi/mvpf-evpi.html",
       "/blog/posts/mvpf-evppi/mvpf-evppi.html"
