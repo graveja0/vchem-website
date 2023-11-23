@@ -4,7 +4,7 @@
     "href": "index.html",
     "title": "Vanderbilt Center for Health Economic Modeling",
     "section": "",
-    "text": "Solving for Probabilistic Sensitivity Analysis Parameter Values\n\n\nTransfinite Scaling for Stable Optimization\n\n\n\n\n\n\n\n\n\nNov 21, 2023\n\n\nJohn Graves, Shawn Garbett, Hanxuan (Astrid) Yu, Jinyi Zhu, Ashley Leech\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Decision Theory\n\n\nPart One: Net Welfare Benefit and the Value of Information\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Research Prioritization\n\n\nPart Two: Using the MVPF to Inform the Direction of Future Research\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Study Design\n\n\nPart Three: Using the MVPF to Inform the Design of a Randomized Experiment\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\nNo matching items"
+    "text": "Estimating Distribution Functions\n\n\n\n\n\n\n\n\n\n\n\n\nNov 21, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nSolving for Probabilistic Sensitivity Analysis Parameter Values\n\n\nTransfinite Scaling for Stable Optimization\n\n\n\n\n\n\n\n\n\nNov 21, 2023\n\n\nJohn Graves, Shawn Garbett, Hanxuan (Astrid) Yu, Jinyi Zhu, Ashley Leech\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Decision Theory\n\n\nPart One: Net Welfare Benefit and the Value of Information\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Research Prioritization\n\n\nPart Two: Using the MVPF to Inform the Direction of Future Research\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\n  \n\n\n\n\nWelfare Analysis Meets Study Design\n\n\nPart Three: Using the MVPF to Inform the Design of a Randomized Experiment\n\n\n\n\n\n\n\n\n\nNov 1, 2023\n\n\nJohn Graves\n\n\n\n\n\n\nNo matching items"
   },
   {
     "objectID": "blog/posts/mvpf-evsi/mvpf-evsi.html",
@@ -124,6 +124,69 @@
     "title": "Welfare Analysis Meets Research Prioritization",
     "section": "Next Steps",
     "text": "Next Steps\nA this point we have:\n\nExplored the range of current knowledge to ascertain whether future research could help a policymaker’s decision to pursue an in-kind benfefit transfer program.\nDecomposed the value of information to identify the parameters with highest decision leverage.\n\nAs mentioned above, however, our estimates of the value of information are based on a theoretical exercise under which we obtain perfect information on uncertain parameters. In practice, however, we do not have unlimited resources to reduce information uncertainty to zero; we must weigh the costs and benefits of sampling the population—perhaps by carrying out a randomized evaluation of the in-kind benefit transfer—to obtain better, but not perfect, information.\nThe next post in this series will explore different study designs so that we can optimally design a randomized evaluation in such a way as to efficiently gain information to inform the decision."
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html",
+    "href": "blog/posts/cdfs/estimating-cdfs.html",
+    "title": "Estimating Distribution Functions",
+    "section": "",
+    "text": "This posting runs through various approaches for estimating distribution functions, and functions of distribution functions such as expected values.\nLet’s start with some definitions. First, define random variable \\(X\\). The cumulative distribution function (CDF) of \\(X\\) is the probability that \\(X\\) takes on some value less than \\(x\\):\n\\[\n\\begin{eqnarray}\nF_X(s) = P(X \\leq x)\n\\end{eqnarray}\n\\tag{1}\\]\nThe probability density function (PDF) tells us about the relative likelihood that \\(X\\) takes on any given value, and can be defined as the derivative of the CDF:\n\\[\nf_X(x) = \\frac{dF_X(x)}{dx}\n\\tag{2}\\]\nWorking in the opposite direction, we can also define the CDF by integrating the PDF:\n\\[\nF_X(x)=\\int_{-\\infty}^x f_X(t) d t\n\\tag{3}\\]\nThis relationship is helpful because it allows us to define the expected value of \\(X\\) as a weighted sum of values \\(x\\), with weights defined by the PDF. In integral notation:\n\\[\n\\mathrm{E_X}[X]=\\int_{-\\infty}^{\\infty} x f_X(x) dx\n\\tag{4}\\]\n\n\nOur example data will be taken from the Oregon Health Insurance Experiment (OHIE). We’ll focus on the experimental or “reduced form” aspect of the OHIE by comparing individuals randomized to Medicaid eligibility to those randomized to control. Our primary outcome of interest will be hemoglobin A1C levels.\n\nlibrary(tidyverse)\nlibrary(qte)\nlibrary(here)\nlibrary(glue)\nlibrary(conflicted)\nlibrary(hrbrthemes)\nlibrary(broom)\nlibrary(edfun)\nlibrary(scam)\nlibrary(quantregForest)\nconflict_prefer(\"filter\",\"dplyr\")\nselect &lt;- dplyr::select\noptions(\"scipen\" = 100, \"digits\" = 5)\nggplot2::theme_set(hrbrthemes::theme_ipsum(grid = \"X\"))\n\ndf &lt;- haven::read_dta(here(\"_ignore/CS9-Oregon-Insurance-Experiment-RCT-IV-Data.dta\")) %&gt;% \n mutate(D =  treatment) %&gt;% \n mutate(Y = a1c_inp) %&gt;% \n select(Y,D,nnnnumhh_li_2 ,nnnnumhh_li_3 ,age_inp, bp_sar_inp, female, starts_with(\"age_decile_dum\"),weight_total_inp) %&gt;% \n na.omit()"
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html#description-of-data",
+    "href": "blog/posts/cdfs/estimating-cdfs.html#description-of-data",
+    "title": "Estimating Distribution Functions",
+    "section": "",
+    "text": "Our example data will be taken from the Oregon Health Insurance Experiment (OHIE). We’ll focus on the experimental or “reduced form” aspect of the OHIE by comparing individuals randomized to Medicaid eligibility to those randomized to control. Our primary outcome of interest will be hemoglobin A1C levels.\n\nlibrary(tidyverse)\nlibrary(qte)\nlibrary(here)\nlibrary(glue)\nlibrary(conflicted)\nlibrary(hrbrthemes)\nlibrary(broom)\nlibrary(edfun)\nlibrary(scam)\nlibrary(quantregForest)\nconflict_prefer(\"filter\",\"dplyr\")\nselect &lt;- dplyr::select\noptions(\"scipen\" = 100, \"digits\" = 5)\nggplot2::theme_set(hrbrthemes::theme_ipsum(grid = \"X\"))\n\ndf &lt;- haven::read_dta(here(\"_ignore/CS9-Oregon-Insurance-Experiment-RCT-IV-Data.dta\")) %&gt;% \n mutate(D =  treatment) %&gt;% \n mutate(Y = a1c_inp) %&gt;% \n select(Y,D,nnnnumhh_li_2 ,nnnnumhh_li_3 ,age_inp, bp_sar_inp, female, starts_with(\"age_decile_dum\"),weight_total_inp) %&gt;% \n na.omit()"
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html#do-it-by-hand-using-regression",
+    "href": "blog/posts/cdfs/estimating-cdfs.html#do-it-by-hand-using-regression",
+    "title": "Estimating Distribution Functions",
+    "section": "Do It “By Hand” Using Regression",
+    "text": "Do It “By Hand” Using Regression\nIn the example below, we’ll construct a CDF “by hand” by defining our various values of \\(t\\) (which we’ll call y_), and then looping over them. Within each loop, we first define a binary outcome, with values of one if the value of \\(Y\\) is less than or equal to the given y_ value under consideration, and zero otherwise. We next regress this binary outcome on an intercept only; the resulting coefficient on the intercept term provides an estimate of the fraction of the sample with a \\(Y\\) value less than or equal to the y_ value.\nWe repeat this for all y_ values and plot the result as a yellow line on top of the previous plot:\n\n\n\n\n\nEmpirical CDF\n\n\n\n\nAs the figure shows, we have successfully replicated the empirical CDF plot produced by ecdf()."
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html#do-it-by-hand-using-logistic-regression",
+    "href": "blog/posts/cdfs/estimating-cdfs.html#do-it-by-hand-using-logistic-regression",
+    "title": "Estimating Distribution Functions",
+    "section": "Do It “By Hand” Using Logistic Regression",
+    "text": "Do It “By Hand” Using Logistic Regression\nWe’ll next repeat the above exercise, but only change the regression type. That is, rather than fit a linear probability model using lm(), we’ll fit a logistic regression model. We then need to predict the outcome response to obtain an estimate of the fraction of the sample with value less than or equal to the given y_ value (this is analogous to obtaining the coefficient on the intercept term in the linear probability model approach above).\nOur new eCDF values are plotted in red below. As the plot shows, we obtain essentially the same eCDF curve:\n\n\n\n\n\nEmpirical CDF"
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html#create-a-smoothed-version-using-a-shape-constrained-generalized-additive-model",
+    "href": "blog/posts/cdfs/estimating-cdfs.html#create-a-smoothed-version-using-a-shape-constrained-generalized-additive-model",
+    "title": "Estimating Distribution Functions",
+    "section": "Create A “Smoothed” Version Using a Shape-Constrained Generalized Additive Model",
+    "text": "Create A “Smoothed” Version Using a Shape-Constrained Generalized Additive Model\nRecall from above that to calculate the PDF of \\(X\\) we can differentiate the CDF (Equation 2). However, the eCDFs calculated above are “chunky”—they are essentially step functions that move at discrete values defined over the support of the outcome.\nDepending on the application we may want to fit a smoothed function to these step function values. While R provides functionality to fit a smoothed curve to a given set of points (approxfun()), the resulting approximation function will likely not play by the rules of a CDF (e.g., minimum value 0, maximum value 1, monotonically increasing throughout, etc.).\nTo fit this approximation function we can fit a shape constrained additive model that imposes these constraints. In the plot below, this new smoothed eCDF curve is plotted in green over the step function plotted above.\n\n\nThis approach is based on the paper here and the code here.\n\n\n\n\n\nEmpirical CDF based on Shape Constrained Additive Model"
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html#do-it-by-hand",
+    "href": "blog/posts/cdfs/estimating-cdfs.html#do-it-by-hand",
+    "title": "Estimating Distribution Functions",
+    "section": "Do it “By Hand”",
+    "text": "Do it “By Hand”\nWe can also leverage Equation 2 and the shape-constrained GAM model fit to construct an estimate of the CDF above to construct the PDF by hand. In the code below, f0() is the constructed CDF function, and we can simply add the option ,1 to obtain the first derivative (i.e., f0(y0) provides CDF values and f0(y0,1) provides PDF values)."
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html#conditional-cdfs-using-logistic-regression",
+    "href": "blog/posts/cdfs/estimating-cdfs.html#conditional-cdfs-using-logistic-regression",
+    "title": "Estimating Distribution Functions",
+    "section": "Conditional CDFs Using Logistic Regression",
+    "text": "Conditional CDFs Using Logistic Regression\n\n\n\n\n\nConditional CDFs Using Logistic Regression"
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html#conditional-cdfs-using-quantile-regression",
+    "href": "blog/posts/cdfs/estimating-cdfs.html#conditional-cdfs-using-quantile-regression",
+    "title": "Estimating Distribution Functions",
+    "section": "Conditional CDFs Using Quantile Regression",
+    "text": "Conditional CDFs Using Quantile Regression\nAn alternative method is to use quantile regression\n\n\n\n\n\nCDFs Constructed Using Quantile Regression"
+  },
+  {
+    "objectID": "blog/posts/cdfs/estimating-cdfs.html#conditional-cdfs-using-quantile-regression-forests",
+    "href": "blog/posts/cdfs/estimating-cdfs.html#conditional-cdfs-using-quantile-regression-forests",
+    "title": "Estimating Distribution Functions",
+    "section": "Conditional CDFs Using Quantile Regression Forests",
+    "text": "Conditional CDFs Using Quantile Regression Forests\n\n\n\n\n\nCDFs Constructed Using Quantile Regression Forest"
   },
   {
     "objectID": "blog/posts/transfinite/transfinite.html",
@@ -620,7 +683,7 @@
     "href": "blog/index.html",
     "title": "Welcome",
     "section": "",
-    "text": "Welcome\nThe Vanderbilt Center for Health Economic Modeling was launched in 2020 to harness the diverse, internationally-recognized expertise of Vanderbilt researchers in modeling the health and economic consequences of health policy and technology changes worldwide.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nSolving for Probabilistic Sensitivity Analysis Parameter Values\n\n\n\nCEA\n\n\n\n\n\n\n\nJohn Graves, Shawn Garbett, Hanxuan (Astrid) Yu, Jinyi Zhu, Ashley Leech\n\n\nNov 21, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Study Design\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Decision Theory\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Research Prioritization\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\nNo matching items"
+    "text": "Welcome\nThe Vanderbilt Center for Health Economic Modeling was launched in 2020 to harness the diverse, internationally-recognized expertise of Vanderbilt researchers in modeling the health and economic consequences of health policy and technology changes worldwide.\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nEstimating Distribution Functions\n\n\n\nCEA\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 21, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nSolving for Probabilistic Sensitivity Analysis Parameter Values\n\n\n\nCEA\n\n\n\n\n\n\n\nJohn Graves, Shawn Garbett, Hanxuan (Astrid) Yu, Jinyi Zhu, Ashley Leech\n\n\nNov 21, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Study Design\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Decision Theory\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\n\n\n\n\n\n\nWelfare Analysis Meets Research Prioritization\n\n\n\nCEA\n\n\nMVPF\n\n\n\n\n\n\n\nJohn Graves\n\n\nNov 1, 2023\n\n\n\n\n\n\n\n\nNo matching items"
   },
   {
     "objectID": "about.html",
