@@ -1,0 +1,337 @@
+---
+title: "Oregon Health Insurance Experiment"
+subtitle: "Extending the Policy Evaluation Toolkit"
+author: John Graves
+date: "2022-12-19"
+categories: [Partial Identification, Causal Inference]
+editor_options: 
+  chunk_output_type: console
+execute:
+  code-fold: true
+  message: false
+  warning: false  
+  cache: true
+bibliography: "../references.bib"
+reference-location: margin
+self-contained: true
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, cache = FALSE}
+#| echo: true
+#| code-fold: true
+#| 
+library(tidyverse)
+library(here)
+library(glue)
+library(copula)
+library(knitr)
+library(kableExtra)
+library(ggsci)
+library(MASS)
+library(psych)
+library(patchwork)
+library(directlabels)
+library(progress)
+library(latex2exp)
+library(copula)
+select <- dplyr::select
+options("scipen"=100, "digits"=6)
+theme_set(hrbrthemes::theme_ipsum() + theme(legend.position = "top", panel.grid.minor.y = element_blank()) )
+
+library(tufte)
+# invalidate cache when the tufte version changes
+#knitr::opts_chunk$set(cache.extra = packageVersion('tufte'))
+options(htmltools.dir.version = FALSE)
+
+get_distribution_function <- function(x,fn = "pdf") {
+  n.knots = 20
+  dat <-
+        tibble(x = x, cdf= ecdf(x)(x)); head(dat)
+
+  n <- length(dat$x)
+  fit <- scam::scam(cdf ~ s(x, bs = "mpi", k = n.knots), data = dat,
+                    weights = c(n, rep(1, n - 2), 10 * n))
+  ## interior knots
+  xk <- with(fit$smooth[[1]], knots[4:(length(knots) - 3)])
+  ## spline values at interior knots
+  yk <- predict(fit, newdata = data.frame(x = xk))
+  ## reparametrization into a monotone interpolation spline
+  xg <- seq(min(dat$x), max(dat$x), length = 100)
+  f <- stats::splinefun(xk, yk, "hyman")
+  pcdf <- f(x)
+  ppdf <- f(x,1)
+  
+  if (fn=="pdf") out <- approxfun(x,f(x,1)) 
+  if (fn=="cdf") {
+    out <- approxfun(x, f(x), 
+            method = "constant",
+            yleft = 0,
+            yright = 1,
+            f = 0)
+  }
+  return(out)
+  
+}
+
+df <- haven::read_dta(here("_sandbox/CS9-Oregon-Insurance-Experiment-RCT-IV-Data.dta")) %>% 
+ mutate(D = ohp_all_ever_inperson) %>% 
+ mutate(Z = treatment,
+        Y = a1c_inp) %>% 
+ select(Y,D,Z,nnnnumhh_li_2 ,nnnnumhh_li_3 , female, starts_with("age_decile_dum"),weight_total_inp) %>% 
+ na.omit()
+
+
+(fit_reduced_form <- 
+    with(df, lm(Y~ Z + nnnnumhh_li_2 + nnnnumhh_li_3 + female + age_decile_dum_inp2 + age_decile_dum_inp3 + 
+                age_decile_dum_inp4 + age_decile_dum_inp5 + age_decile_dum_inp6 + age_decile_dum_inp7 +
+                age_decile_dum_inp8 + age_decile_dum_inp9 + age_decile_dum_inp10, weights = weight_total_inp)) )
+```
+
+
+
+# Worst Case Bounds
+
+
+```{r}
+
+y1 <- # Vector of treated outcomes
+    df %>% filter(D==1) %>% pull(Y) %>% na.omit()
+F1 <- # Empirical CDF of treated outcome vector
+    ecdf(y1)
+
+y0 <- # Vector of untreated outcomes
+    df %>% filter(D==0) %>% pull(Y)
+F0 <- # Empirical CDF of untreated outcome vector
+    ecdf(y0)
+
+delta_ <- # Vector of hypothetical treatment effects
+    seq(-.2,0.2, length.out =1000)
+y_ <- # Vector of the support of the outcome, with 100 evenly-spaced values along it. 
+    seq(floor(min(y0,y1))-1,ceiling(max(y0,y1))+1, length.out = 1000)
+
+tau <-  # Quantiles of the treatment effect distribution to obtain 
+    seq(.01,.99,.01)
+
+X <- # X values of treated observations
+  df %>%
+  filter(D==1) %>%
+  pull(female)
+
+X0 <- # X values of untreated observations
+  df %>% 
+  filter(D==0) %>% 
+  pull(female)
+
+
+```
+
+```{r boundsWD}
+#| echo: false
+#| message: false
+#| warning: false
+
+library(furrr)
+library(tictoc)
+#plan(multisession)
+
+F_l_wd_ <- # Lower bound
+  delta_ %>% future_map(~{ # Outer loop is over possible values of the treatment effect
+    delta <- .x
+    y0 %>% # Inner loop is over y0
+      map_dbl(~{
+        y <- .x
+        (F1(y) - F0(y-delta)) %>% max(.,0)
+      })
+  }) %>% 
+  map_dbl(~(max(.))) # sup in formula
+
+
+# Turn it into an eCDF object
+  F.wd.l <- approxfun(delta_,  F_l_wd_, method = "constant", yleft = 0, yright = 1, 
+            f = 0, ties = "ordered")
+  class(F.wd.l) <- c("ecdf", "stepfun", class(F.wd.l))
+  assign("nobs", length(delta_), envir = environment(F.wd.l))
+
+F_u_wd_ <- # Upper bound
+  delta_ %>% future_map(~{ # Outer loop is over possible values of the treatment effect
+    delta <- .x
+    y0 %>% # Inner loop is over y0
+      map_dbl(~{
+        y <- .x
+        (F1(y) - F0(y-delta)) %>% min(.,0)
+      })
+  }) %>% 
+  map(~(min(.))) %>% # inf in formula
+  map_dbl(~(1+.x)) # add one per formula
+
+# Turn it into an eCDF object
+  F.wd.u <- approxfun(delta_,  F_u_wd_, method = "constant", yleft = 0, yright = 1, 
+                      f = 0, ties = "ordered")
+  class(F.wd.u) <- c("ecdf", "stepfun", class(F.wd.u))
+  assign("nobs", length(delta_), envir = environment(F.wd.u))
+  
+df_bounds <- 
+  tibble(x = delta_, ymax = F.wd.u(delta_), ymin = F.wd.l(delta_)) %>% 
+            mutate(region = x<0)
+
+qwdu <- quantile(F.wd.l, tau, type=1)
+qwdl <- quantile(F.wd.u, tau, type=1)
+
+df_wd <- 
+  data.frame(tau = c(tau,tau), bound = c(qwdu,qwdl), type=c(rep("upper",length(qwdu)),rep("lower",length(qwdl)))) %>% 
+  mutate(method = "Worst-Case\n[Williamson-Downs (1990)]") %>% 
+  mutate(label = ifelse(type=="upper","Worst-Case\n[Williamson-Downs (1990)]","")) 
+
+col_scheme <- c("#7DC4CC","#0A2E36","#FF5733")
+
+```
+
+```{r plotWD}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Bounds on the Cumulative Distribution Function of the Treatment Effect (delta)
+#| label: fig-bounddistdelta
+#| fig-height: 6
+#| fig-width: 7
+
+br_ <- sort(c(seq(0,1,0.25),F.wd.u(0),F.wd.l(0)))
+br_l <- paste0(round(br_,2))
+
+ggplot() +
+  #geom_line(data = df_bounds, aes(x, y),lwd=1.5, col = "darkred") +
+  #annotate("text",x=10, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
+  labs(x = "x = Treatment Effect", y = TeX("$Pr(\\Delta$<=x)"))+
+  scale_fill_manual(values = c('lightgrey', '#C14E4295'), guide = "none") +
+  geom_ribbon(data = df_bounds , 
+              aes(x = x, ymin = ymin, ymax=ymax, fill = region), alpha = 0.5)  +
+  geom_line(data = df_bounds, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
+  geom_line(data = df_bounds, aes(x = x, y = ymax), alpha = 1,lwd=1.25) + 
+  scale_y_continuous(breaks = br_, labels = br_l) +
+  geom_point(data = tibble(x = 0, y = F.wd.u(0)), aes(x = x, y = y),size=5, pch=10) +
+  geom_point(data = tibble(x = 0, y = F.wd.l(0)), aes(x = x, y = y),size=5, pch=10) 
+  
+```
+
+```{r FLbounds1, echo = FALSE}
+i1 <- # Index of treated observations
+  df %>% 
+  mutate(i = row_number()) %>% 
+  filter(D==1) %>% 
+  pull(i)
+
+i0 <- # index of untreated observations
+  df %>% 
+  mutate(i = row_number()) %>% 
+  filter(D==0) %>% 
+  pull(i)
+
+
+F0_fl <-# ecdf for untreated defined across the support of y
+  y_ %>% map_dbl(~({
+    .y = .x
+    mean(df$Y[i0] <= .y)
+  })) %>% BMisc::makeDist(y_, .)
+
+
+F1_fl <-# ecdf for treated defined across the support of y
+  y_ %>% map_dbl(~({
+    .y = .x
+    mean(df$Y[i1] <= .y )
+  })) %>% BMisc::makeDist(y_, .)
+
+# Construct bounds
+
+#pb <- progress_bar$new(total = length(delta_))
+F_l_fl_ <- # Lower bound
+  delta_ %>% future_map(~{ # outer loop is over possible values of the treatment effect
+    delt <- .x
+    #pb$tick()
+    y0 %>% # inner loop is over observed outcome values among untreated
+      map_dbl(~({
+        y0_ = .x 
+        (F1_fl(y0_ + delt)-F0_fl(y0_))/(1-F0_fl(y0_))
+      }))  %>% 
+      map_dbl(~(max(0,.x,na.rm=TRUE))) %>% 
+      mean(.)
+  }) %>% 
+  unlist()
+
+#pb <- progress_bar$new(total = length(delta_))
+F_u_fl_ <-  # Upper bound
+  delta_ %>% future_map(~{ # outer loop is over possible values of the treatment effect
+    delt <- .x
+    #pb$tick()
+    y0 %>% # inner loop is over observed outcome values among untreated 
+      map_dbl(~({
+        y0_ = .x 
+        (F1_fl(y0_+delt))/(F0_fl(y0_))
+      }))  %>% 
+      map_dbl(~(min(1,.x,na.rm=TRUE))) %>% 
+      mean(.)
+  }) %>% 
+  unlist()
+
+
+# Convert into an ECDF
+F.fl.l <- approxfun(delta_,  F_l_fl_, method = "constant", yleft = 0, yright = 1, 
+                    f = 0, ties = "ordered")
+class(F.fl.l) <- c("ecdf", "stepfun", class(F.fl.l))
+assign("nobs", length(delta_), envir = environment(F.fl.l))
+
+F.fl.u <- approxfun(delta_,  F_u_fl_, method = "constant", yleft = 0, yright = 1, 
+                    f = 0, ties = "ordered")
+class(F.fl.u) <- c("ecdf", "stepfun", class(F.fl.u))
+assign("nobs", length(delta_), envir = environment(F.fl.u))
+
+df_bounds_fl <- 
+  tibble(x = delta_, ymax = F.fl.u(delta_), ymin = F.fl.l(delta_)) %>% 
+            mutate(region = x<0)
+
+qflu <- quantile(F.fl.l, tau, type=1)
+qfll <- quantile(F.fl.u, tau, type=1)
+
+df_fl <- 
+  data.frame(tau = c(tau,tau), bound = c(qflu,qfll), type=c(rep("upper",length(qflu)),rep("lower",length(qfll)))) %>% 
+  mutate(method = "Frandsen & Lefgrens (2021)") %>% 
+  mutate(label = ifelse(type=="upper","Frandsen & Lefgrens (2021)","")) 
+
+```
+
+```{r FLboundsplot}
+#| echo: false
+#| warning: false
+#| message: false
+#| fig-cap: Frandsen-Lefgren (2021) Bounds on the Cumulative Distribution Function of the Treatment Effect (delta)
+#| label: fig-flbounddistdelta
+#| fig-height: 6
+#| fig-width: 7
+
+
+br_wd <- sort(c(seq(0,1,0.25),F.wd.u(0),F.wd.l(0),F.fl.u(0),F.fl.l(0)))
+br_wd_l <- paste0(round(br_wd,2))
+
+ggplot() +
+  #geom_line(data = df, aes(x, y),lwd=1.5, col = "darkred") +
+ # annotate("text",x=4.5, y = .3, label = "True treatment effect CDF\nshown as dark red line.",hjust=0,size = 4) +
+   labs(x = "x = Treatment Effect", y = TeX("$Pr(\\Delta$<=x)"))+
+  scale_fill_manual(values = c('lightgrey', '#C14E4295'), guide = "none") +
+  #geom_line(data = tibble(x = delta_, y = F.wd.l(delta_))) +
+  #geom_line(data = tibble(x = delta_, y = F.wd.u(delta_))) +
+  geom_ribbon(data = df_bounds_fl , 
+              aes(x = x, ymin = ymin, ymax=ymax, fill = region), alpha = 0.5) +
+  hrbrthemes::theme_ipsum() + 
+  geom_line(data = df_bounds, aes(x = x, y = ymin), alpha = 0.5) +
+  geom_line(data = df_bounds, aes(x = x, y = ymax), alpha = 0.5) +
+  geom_line(data = df_bounds_fl, aes(x = x, y = ymin), alpha = 1,lwd=1.25) +
+  geom_line(data = df_bounds_fl, aes(x = x, y = ymax), alpha = 1,lwd=1.25) +
+    scale_y_continuous(breaks = br_wd, labels = br_wd_l) + 
+  geom_point(data = tibble(x = 0, y = F.fl.u(0)), aes(x = x, y = y),size=5, pch=10) +
+  geom_point(data = tibble(x = 0, y = F.fl.l(0)), aes(x = x, y = y),size=5, pch=10)
+  
+
+```
+

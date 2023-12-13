@@ -1,5 +1,5 @@
 ---
-title: "Main Website"
+title: "Vanderbilt Center for Health Economic Modeling"
 format: 
   html:
     link-external-newwindow: true
@@ -9,6 +9,8 @@ filters:
    - lightbox
 lightbox: auto
 bibliography: references.bib
+listing: 
+    contents: blog/posts
 ---
 
-[DOIs for blog posts](https://blog.datacite.org/schema-org-register-dois/)
+<!-- [DOIs for blog posts](https://blog.datacite.org/schema-org-register-dois/) -->

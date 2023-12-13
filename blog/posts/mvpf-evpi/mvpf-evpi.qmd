@@ -2,7 +2,7 @@
 title: "Welfare Analysis Meets Decision Theory"
 subtitle: "Part One: Net Welfare Benefit and the Value of Information"
 author: John Graves
-date: "2023-03-24"
+date: "2023-11-01"
 categories: [CEA, MVPF]
 editor_options: 
   chunk_output_type: console
@@ -16,7 +16,7 @@ self-contained: true
 image: "media/noun-scale-1588863.png"
 ---
 
-**Part one** in a three-part series on how the tools of comparative welfare analysis can be used to refine and design prospective randomized evaluations.
+**Part one** in a three-part series on how teh tools of welfare analysis and decision science can be used to inform the direction, scope,  and design of research and decision-making. 
 
 ```{r setup}
 
@@ -361,7 +361,9 @@ The expected welfare loss in @eq-expected-loss is also known as the **expected v
 
 $$
 E_{\boldsymbol{\pi}} \big [ L_{\alpha^*} \big ]  = EVPI(\boldsymbol{\alpha},\boldsymbol{\pi},\lambda) 
-$$ \### Estimating the Expected Welfare Loss
+$$ 
+
+### Estimating the Expected Welfare Loss
 
 The code below calcualtes the EVPI for the MVPF of the in-kind benefit transfer above, for a particular value of $\lambda$:
 
@@ -445,7 +447,7 @@ ggsave("media/evpi.png")
 
 @fig-evpi tells us that based on existing evidence, we have an answer to our first question: if the societal willigness-to-pay value ($\lambda$) is in the neighborhood of 0.75-1.15, then there is high information value in future research to reduce uncertainty in $W(\mathbf{\pi},\alpha)$ and $C(\mathbf{\pi},\alpha)$.
 
-With this information in mind---and so long as pursuing more information has value---we can move on to the second question and start to ask (a) which specific sources of uncertainty (i.e., individual parameters or sets of parmeters in $W(\mathbf{\pi},\alpha)$ and $C(\mathbf{\pi},\alpha)$) drive the overall EVPI estimate? And how can we prospectively design a clinical trial or randomized evaluation in such a way as to most efficiently reduce information uncertainty to a point where a better decision can be made? Answering these questions is the focus of [part two in this series](../mvpf-evsi/mvpf-evsi.qmd).
+With this information in mind---and so long as pursuing more information has value---we can move on to the second question and start to ask (a) which specific sources of uncertainty (i.e., individual parameters or sets of parmeters in $W(\mathbf{\pi},\alpha)$ and $C(\mathbf{\pi},\alpha)$) drive the overall EVPI estimate? And how can we prospectively design a clinical trial or randomized evaluation in such a way as to most efficiently reduce information uncertainty to a point where a better decision can be made? Answering these questions is the focus of [part two in this series](../mvpf-evsi/mvpf-evppi.qmd).
 
 ```{r}
 #| eval: false

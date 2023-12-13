@@ -2,7 +2,7 @@
 title: "Welfare Analysis Meets Research Prioritization"
 subtitle: "Part Two: Using the MVPF to Inform the Direction of Future Research"
 author: John Graves
-date: "2023-03-24"
+date: "2023-11-01"
 categories: [CEA, MVPF]
 editor_options: 
   chunk_output_type: console
@@ -483,4 +483,4 @@ A this point we have:
 
 As mentioned above, however, our estimates of the value of information are based on a theoretical exercise under which we obtain *perfect information* on uncertain parameters. In practice, however, we do not have unlimited resources to reduce information uncertainty to zero; we must weigh the costs and benefits of sampling the population---perhaps by carrying out a randomized evaluation of the in-kind benefit transfer---to obtain better, but not perfect, information.
 
-The next post in this series will explore different study designs so that we can optimally design a randomized evaluation in such a way as to efficiently gain information to inform the decision.
+The [next post](../mvpf-evsi/mvpf-evsi.qmd) in this series will explore different study designs so that we can optimally design a randomized evaluation in such a way as to efficiently gain information to inform the decision.

@@ -247,7 +247,7 @@ In the data shown in @tbl-perfdoc1, the first five rows are treated while the la
 
 ## Unit-Level Treatment Effects
 
-Becuase (for now) we observe both potential outcomes, we have all the information we need to define unit-level treatment effects. Let's define `delta` as the unit-level difference in potential outcomes:
+Because (for now) we observe both potential outcomes, we have all the information we need to define unit-level treatment effects. Let's define `delta` as the unit-level difference in potential outcomes:
 
 
 ```{r}
@@ -564,7 +564,6 @@ df_wd <-
 col_scheme <- c("#7DC4CC","#0A2E36","#FF5733")
 
 ```
-
 
 
 ```{r plotWD}
@@ -889,7 +888,6 @@ X0 <- # X values of untreated observations
   df %>% 
   filter(D==0) %>% 
   pull(X)
-
 
 taus0 <- sort(ecdf(y0)(y0))
 quantreg_fit <- quantreg::rq(Y_obs ~ X, tau = taus0, data = df %>% filter(D==0))

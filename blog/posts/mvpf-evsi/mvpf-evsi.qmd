@@ -2,7 +2,7 @@
 title: "Welfare Analysis Meets Study Design"
 subtitle: "Part Three: Using the MVPF to Inform the Design of a Randomized Experiment"
 author: John Graves
-date: "2022-12-19"
+date: "2023-11-01"
 categories: [CEA, MVPF]
 editor_options: 
   chunk_output_type: console
