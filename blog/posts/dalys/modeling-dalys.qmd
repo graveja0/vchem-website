@@ -160,24 +160,24 @@ params <- list(
     tr_names = c("Healthy","Sick","Sicker"), # transient health states
     ab_names = c("DeadBG","DeadDisease"), # absorbing health states
     
-    horizon = 200,  
+    horizon = 100,  
     r_ann = .03,
     Delta_t = 1,
     age0 = 20,
     s0T = c(1,0,0,0,0),
     
-    rHS1 = 0.05,
-    rD = 0.01,
+    rHS1 = .05,
+    rD = 0.1,
     rS1S2 = 0.12,
-    rS1D = 0.02,
-    rS2D = 0.03,
+    rS1D = 0.05,
+    rS2D = 0.08,
     
     uS1 = 0.95,
     uS2 = 0.8,
     uD = 0,
     uH = 1,
     
-    dwS1 = 0.1,
+    dwS1 = 0.05,
     dwS2 = 0.2,
     
     cycle_correction = "half-cycle",
@@ -874,6 +874,21 @@ result1 %>%
 
 ```
 
+# Debugging
+
+- The fundamental matrix gives you expected occupancy without any cycle correction. So it's not great for plugging in endogenous life table values; you'd really want to just solve for life expectancy using rewards and use those values.
+    - See 1. vs. 2 for this (with no discounting, no sickness transitions, and a reasonably high background death transition)
+
+- Once you add the reward matrices (3 vs. 4) you essentially get the same answer whether or not you use the cycle correction. This is because the cycle correction is just a way of accounting for the fact that transitions don't happen at the beginning or end of each cycle. But the reward matrix approach is already accounting for that. So you don't need to do both.
+
+- We can also use basic math and an exponential death rate to get the same answer as above (see 3. vs. 4 vs. 5)
+
+- 6 and 7 use partial rewards and are similar to the above. Markov trace with half-cycle correction, and reward matrix, both yield nearly identical answers. 
+
+- 8 vs. 9 shows that transition rewards (for YLLs) are also hte same using a markov trace diff(deaths) approach and the matrix with rewards approach.
+
+
+
 ```{r, eval = FALSE, echo = FALSE}
 
 # NOte the following is a debugging station for a model where I set the rate of progression
@@ -904,7 +919,7 @@ R3 = R1 * R1 * R1
 Z = cbind(diag(tau*omega),matrix(0,nrow=tau*omega, ncol=alpha))
 {t(N)%*% Z %*% t(mPtilde$natural_history * R1) %*% rep(1,s)}[1]
 
-# Approach 2: Reward Matrix (0.5 correction)
+# Approach 3: Reward Matrix (0.5 correction)
 H = matrix(1,nrow=tau, ncol=omega)
 h = vec(H) %>% as.matrix()
 not_h = 1-h
@@ -918,19 +933,19 @@ Z = cbind(diag(tau*omega),matrix(0,nrow=tau*omega, ncol=alpha))
 e = rep(1,s)
 {t(N)%*% Z %*% t(mPtilde$natural_history * R1) %*% e}[1]
 
-# Approach 3: Markov Trace with Half-Cycle Correction
+# Approach 4: Markov Trace with Half-Cycle Correction
 tr <- 0:omega %>% map_df(~(c(1,0,0,0,0) %*% (t(mP$natural_history) %^% .x) %>% as.data.frame()))
 sum( gen_wcc(100,"half-cycle") * (as.matrix(tr) %*% c(1,1,1,0,0)))
 
-# Approach 4: Simple Math 
+# Approach 5: Simple Math 
 sum(gen_wcc(100,"half-cycle")*exp(-.1*0:100))
 
-# Approach 5: Partial Reward with Markov Trace and Half-Cycle Correction
+# Approach 6: Partial Reward with Markov Trace and Half-Cycle Correction
 tr <- 0:omega %>% map_df(~(c(1,0,0,0,0) %*% (t(mP$natural_history) %^% .x) %>% as.data.frame()))
 r_ <- c(0.9,0,0,0,0)
 sum( gen_wcc(100,"half-cycle") * ((as.matrix(tr) %*% c(1,1,1,0,0)) %*% r_))
 
-# Approach 6: Partial Reward Matrix  (Should be roughly equivalent to Approach 5)
+# Approach 7: Partial Reward Matrix  (Should be roughly equivalent to Approach 6)
 H = matrix(1,nrow=tau, ncol=omega)
 h = vec(H) %>% as.matrix()
 not_h = 1-h
@@ -947,13 +962,13 @@ Z = cbind(diag(tau*omega),matrix(0,nrow=tau*omega, ncol=alpha))
 e = rep(1,s)
 {t(N)%*% Z %*% t(mPtilde$natural_history * R1) %*% e}[1]
 
-# Approach 7: Transition Reward for Death based on diff(deaths) in trace
+# Approach 8: Transition Reward for Death based on diff(deaths) in trace
 remaining_life_expectancy <- fExR(ages)
 tr <- 0:omega %>% map_df(~(c(1,0,0,0,0) %*% (t(mP$natural_history) %^% .x) %>% as.data.frame()))
 new_deaths = c(0,diff(tr[,4]))
 sum(gen_wcc(omega,"half-cycle") *  remaining_life_expectancy * new_deaths)
 
-# Approach 8: Transition Reward in Markov Chain
+# Approach 9: Transition Reward in Markov Chain
 eta1_ex <- rev(sort(rep(remaining_life_expectancy[-1],length(tr_names))))
 B1 = matrix(0,nrow=tau*omega, ncol = tau*omega)
 C1 = rbind(eta1_ex,matrix(0,nrow=1,ncol=tau*omega)) # note thsi is backwards from before because i'm counting background mort, not disease
