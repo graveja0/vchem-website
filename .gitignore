@@ -10,3 +10,5 @@ _extensions/
 *cache*
 *_files*
 blog/resources/csabounds/
+.Renviron
+_ignore/
