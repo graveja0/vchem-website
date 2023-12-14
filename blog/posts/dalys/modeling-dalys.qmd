@@ -154,8 +154,8 @@ gen_wcc <- function (n_cycles, method = c("Simpson1/3", "half-cycle", "none"))
 # Parameterize
 params <- list(
     # Treatment Strategies
-    tx_names = c("natural_history"),      # treatment names
-    n_tx = 1, # number of treatment strategies
+    tx_names = c("natural_history","prevention","treatment"),      # treatment names
+    n_tx = 3, # number of treatment strategies
     
     tr_names = c("Healthy","Sick","Sicker"), # transient health states
     ab_names = c("DeadBG","DeadDisease"), # absorbing health states
@@ -171,6 +171,9 @@ params <- list(
     rS1S2 = 0.12,
     rS1D = 0.05,
     rS2D = 0.08,
+    
+    rr_prevent = 0.8,
+    rr_treat = 0.7,
     
     uS1 = 0.95,
     uS2 = 0.8,
@@ -244,11 +247,37 @@ params1 <- with(params,modifyList(params,list(
         byrow=TRUE, 
         dimnames = list(c(tr_names,ab_names),
                         c(tr_names,ab_names)
+        )),
+     mR_prevent = 
+        matrix(c(
+        -(rr_prevent * rHS1 + rD), rr_prevent * rHS1, 0, rD, 0 ,
+        0, -(rS1S2 + rS1D + rD), rS1S2, rD, rS1D,
+        0, 0, -(rS2D + rD), rD, rS2D,
+        0,0,0,0,0,
+        0,0,0,0,0),
+        nrow = 5, 
+        ncol = 5,
+        byrow=TRUE, 
+        dimnames = list(c(tr_names,ab_names),
+                        c(tr_names,ab_names)
+        )),
+     mR_treat = 
+        matrix(c(
+        -(rHS1 + rD), rHS1, 0, rD, 0 ,
+        0, -(rr_treat * rS1S2 +  rD +  rr_treat * rS1D), rr_treat * rS1S2, rD, rr_treat * rS1D,
+        0, 0, -(rr_treat * rS2D + rD), rD, rr_treat * rS2D,
+        0,0,0,0,0,
+        0,0,0,0,0),
+        nrow = 5, 
+        ncol = 5,
+        byrow=TRUE, 
+        dimnames = list(c(tr_names,ab_names),
+                        c(tr_names,ab_names)
         ))
 )))
 
 params1 <- with(params1,modifyList(params1,list(
-    mR = array(as.vector(mR_nh), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
+    mR = array(c(as.vector(mR_nh),as.vector(mR_prevent), as.vector(mR_treat)), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
           dimnames = list(c(tr_names,ab_names),c(tr_names,ab_names),tx_names)) %>% 
             apply(.,3,function(x) x, simplify=FALSE)
 )))
@@ -368,11 +397,38 @@ params2 <- with(params,modifyList(params,list(
         byrow=TRUE, 
         dimnames = list(c(tr_names,"Dead","trSickDead"),
                         c(tr_names,"Dead","trSickDead")
+        )),
+    mR_treat = 
+        matrix(c(
+        -(rHS1 + rD), rHS1, 0, rD,0,
+        0, -(rr_treat * rS1S2 + rr_treat * rS1D + rD), rr_treat * rS1S2, (rr_treat* rS1D + rD), rr_treat* rS1D,
+        0, 0, -(rr_treat * rS2D + rD), (rr_treat * rS2D + rD),rr_treat * rS2D,
+        0,0,0,0,0,
+        0,0,0,0,0),
+        nrow = 5, 
+        ncol = 5,
+        byrow=TRUE, 
+        dimnames = list(c(tr_names,"Dead","trSickDead"),
+                        c(tr_names,"Dead","trSickDead")
+        )), 
+    
+    mR_prevent = 
+        matrix(c(
+        -(rr_prevent * rHS1 + rD), rr_prevent * rHS1, 0, rD,0,
+        0, -(rS1S2 + rS1D + rD), rS1S2, (rS1D + rD),rS1D,
+        0, 0, -(rS2D + rD), (rS2D + rD),rS2D,
+        0,0,0,0,0,
+        0,0,0,0,0),
+        nrow = 5, 
+        ncol = 5,
+        byrow=TRUE, 
+        dimnames = list(c(tr_names,"Dead","trSickDead"),
+                        c(tr_names,"Dead","trSickDead")
         ))
 )))
 
 params2 <- with(params2,modifyList(params2,list(
-    mR = array(as.vector(mR_nh), dim = c(length(tr_names)+ 2,length(tr_names)+ 2,length(tx_names)),
+    mR = array(c(as.vector(mR_nh), as.vector(mR_prevent), as.vector(mR_treat)), dim = c(length(tr_names)+ 2,length(tr_names)+ 2,length(tx_names)),
           dimnames = list(c(tr_names,"Dead","trSickDead"),c(tr_names,"Dead","trSickDead"),tx_names)) %>% 
             apply(.,3,function(x) x, simplify=FALSE)
 )))
@@ -484,9 +540,15 @@ result2 <- cbind(LE2, YLD2,YLL2,DALY2) %>%
     mutate(approach = "Transition States") %>% 
     dplyr::select(approach, strategy, LE = LE2, YLD=YLD2, YLL=YLL2, DALY=DALY2) 
 
-result1 %>% 
-    bind_rows(result2) %>% 
-    kable(digits = 3, col.names = c("Approach","Scenario","Life Expectancy","YLDs","YLLs","DALYs")) %>% 
+tib <- result1 %>% 
+    bind_rows(result2) 
+
+tib %>% 
+    arrange(strategy) %>% 
+    select(-strategy) %>% 
+    kable(digits = 3, col.names = c("Approach","Life Expectancy","YLDs","YLLs","DALYs"),) %>% 
+    kable_styling() %>% 
+    pack_rows(index = c("natural_history" = 2, "prevention" = 2, "treatment" = 2)) %>% 
     kable_styling()
 ```
 
@@ -625,6 +687,32 @@ params3 <- with(params,modifyList(params,list(
         byrow=TRUE, 
         dimnames = list(c(tr_names,ab_names),
                         c(tr_names,ab_names)
+        )),
+        mR_prevent = 
+            matrix(c(
+            -(rr_prevent * rHS1 + rD), rr_prevent * rHS1, 0, rD, 0 ,
+            0, -(rS1S2 + rS1D + rD), rS1S2, (rD), rS1D,
+            0, 0, -(rS2D + rD), ( rD), rS2D,
+            0,0,0,0,0,
+            0,0,0,0,0),
+            nrow = 5, 
+            ncol = 5,
+            byrow=TRUE, 
+            dimnames = list(c(tr_names,ab_names),
+                            c(tr_names,ab_names)
+        )),
+        mR_treat = 
+            matrix(c(
+            -(rHS1 + rD), rHS1, 0, rD, 0 ,
+            0, -(rr_treat * rS1S2 + rr_treat * rS1D + rD), rr_treat * rS1S2, rr_treat * rD, rS1D,
+            0, 0, -(rr_treat * rS2D + rD), ( rD), rr_treat * rS2D,
+            0,0,0,0,0,
+            0,0,0,0,0),
+            nrow = 5, 
+            ncol = 5,
+            byrow=TRUE, 
+            dimnames = list(c(tr_names,ab_names),
+                            c(tr_names,ab_names)
         ))
 )))
 
@@ -633,7 +721,7 @@ params3 <- with(params3,modifyList(params3,list(
     # by cycle. but in principle, we could create a list object with each of these matrices defined
     # for each time cycle. 
 
-    mR = array(as.vector(mR_nh), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
+    mR = array(c(as.vector(mR_nh), as.vector(mR_prevent), as.vector(mR_treat)), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
           dimnames = list(c(tr_names,ab_names),c(tr_names,ab_names),tx_names)) %>% 
             apply(.,3,function(x) t(x), simplify=FALSE) # TK JG CHECK
 )))
@@ -776,20 +864,45 @@ YLL3 <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expec
 
 DALY3 <- map2(YLL3,YLD3,~(.x+.y))
 
+
+
+
 result3 <- cbind(LE3 = LE3$natural_history[1], YLD3 = YLD3$natural_history[1], YLL3 = YLL3$natural_history[1],DALY3 = DALY3$natural_history[1]) %>% 
+    rbind(cbind(LE3 = LE3$prevention[1], YLD3 = YLD3$prevention[1], YLL3 = YLL3$prevention[1],DALY3 = DALY3$prevention[1])) %>% 
+    rbind(cbind(LE3 = LE3$treatment[1], YLD3 = YLD3$treatment[1], YLL3 = YLL3$treatment[1],DALY3 = DALY3$treatment[1])) %>% 
     as.data.frame() %>% 
     mutate_all(~as.numeric(.))  %>% 
-    mutate(strategy = "natural_history") %>% 
+    mutate(strategy = c("natural_history","prevention","treatment")) %>% 
     mutate(approach = "Healthy Longevity") %>% 
     dplyr::select(approach, strategy, LE = LE3, YLD=YLD3, YLL=YLL3, DALY=DALY3) 
 
-result1 %>% 
+
+tib <- result1 %>% 
     bind_rows(result2) %>% 
-    bind_rows(result3) %>% 
-    kable(digits = 3, col.names = c("Approach","Scenario","Life Expectancy","YLDs","YLLs","DALYs")) %>% 
+    bind_rows(result3)
+
+tib %>% 
+    arrange(strategy) %>% 
+    select(-strategy) %>% 
+    kable(digits = 3, col.names = c("Approach","Life Expectancy","YLDs","YLLs","DALYs"),) %>% 
+    kable_styling() %>% 
+    pack_rows(index = c("natural_history" = 3, "prevention" = 3, "treatment" = 3)) %>% 
     kable_styling()
 
 
+
+```
+
+```{r}
+tib %>% 
+    gather(outcome,value,-approach,-strategy) %>% 
+    unite(outcome,outcome,strategy) %>% 
+    spread(outcome,value) %>% 
+    select(approach,starts_with("DALY")) %>% 
+    mutate(DALY_prevention = DALY_prevention - DALY_natural_history,
+           DALY_treatment = DALY_treatment - DALY_natural_history) %>% 
+    kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment")) %>% 
+    kable_styling()
 ```
 
 # Approach 4: QALY-Like DALY
@@ -809,11 +922,37 @@ params4 <- with(params,modifyList(params,list(
         byrow=TRUE, 
         dimnames = list(c(tr_names,ab_names),
                         c(tr_names,ab_names)
+        )),
+    mR_prevent = 
+        matrix(c(
+        -(rr_prevent * rHS1 + rD), rr_prevent * rHS1, 0, rD, 0 ,
+        0, -(rS1S2 + rS1D + rD), rS1S2, rD, rS1D,
+        0, 0, -(rS2D + rD), rD, rS2D,
+        0,0,0,0,0,
+        0,0,0,0,0),
+        nrow = 5, 
+        ncol = 5,
+        byrow=TRUE, 
+        dimnames = list(c(tr_names,ab_names),
+                        c(tr_names,ab_names)
+        ))  , 
+     mR_treat = 
+        matrix(c(
+        -(rHS1 + rD), rHS1, 0, rD, 0 ,
+        0, -(rr_treat * rS1S2 + rr_treat * rS1D + rD), rr_treat * rS1S2, rD, rr_treat * rS1D,
+        0, 0, -(rr_treat * rS2D + rD), rD, rr_treat * rS2D,
+        0,0,0,0,0,
+        0,0,0,0,0),
+        nrow = 5, 
+        ncol = 5,
+        byrow=TRUE, 
+        dimnames = list(c(tr_names,ab_names),
+                        c(tr_names,ab_names)
         ))
 )))
 
 params4 <- with(params4,modifyList(params4,list(
-    mR = array(as.vector(mR_nh), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
+    mR = array(c(as.vector(mR_nh), as.vector(mR_prevent), as.vector(mR_treat)), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
           dimnames = list(c(tr_names,ab_names),c(tr_names,ab_names),tx_names)) %>% 
             apply(.,3,function(x) x, simplify=FALSE)
 )))
@@ -865,14 +1004,37 @@ result4 <- cbind(QALY_DALY4) %>%
     mutate(approach = "QALY-like DALY") %>% 
     dplyr::select(approach, strategy, QALY_DALY = QALY_DALY4) 
 
-result1 %>% 
+
+tib <- result1 %>% 
     bind_rows(result2) %>% 
     bind_rows(result3) %>% 
-    bind_rows(result4) %>% 
-    kable(digits = 3, col.names = c("Approach","Scenario","Life Expectancy","YLDs","YLLs","DALYs","QALY-like DALY")) %>% 
+    bind_rows(result4)
+
+tib %>% 
+    arrange(strategy) %>% 
+    select(-strategy) %>% 
+    kable(digits = 3, col.names = c("Approach","Life Expectancy","YLDs","YLLs","DALYs","QALY-like DALY")) %>% 
+    kable_styling() %>% 
+    pack_rows(index = c("natural_history" = 4, "prevention" = 4, "treatment" = 4)) %>% 
     kable_styling()
 
 ```
+
+```{r}
+tib %>% 
+    mutate(DALY = coalesce(DALY, QALY_DALY)) %>% 
+    select(-QALY_DALY) %>% 
+    gather(outcome,value,-approach,-strategy) %>% 
+
+    unite(outcome,outcome,strategy) %>% 
+    spread(outcome,value) %>% 
+    select(approach,starts_with("DALY")) %>% 
+    mutate(DALY_prevention = DALY_prevention - DALY_natural_history,
+           DALY_treatment = DALY_treatment - DALY_natural_history) %>% 
+    kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment")) %>% 
+    kable_styling()
+```
+
 
 # Debugging
 
