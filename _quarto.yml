@@ -21,7 +21,7 @@ filters:
    - lightbox
    
 execute:
-  freeze: auto  # re-render only when source changes
+  freeze: true  # re-render only when source changes
 
 format:
   html:
