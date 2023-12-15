@@ -1,0 +1,968 @@
+---
+title: "DALYs Around the World"
+author: John Graves
+date: "2023-12-15"
+categories: [CEA]
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: true
+  message: false
+  warning: false  
+  code-fold: true
+  freeze: auto 
+bibliography: "references.bib"
+reference-location: margin
+self-contained: true
+image: "media/DALY-image.svg"
+---
+
+```{r setup}
+#| code-fold: true
+#| code-summary: Setup R session
+library(tidyverse)
+library(here)
+library(glue)
+library(demography)
+library(MortalityLaws)
+library(janitor)
+library(data.table)
+library(expm)
+transpose <- purrr::transpose
+library(dtplyr)
+library(ggsci)
+library(directlabels)
+library(knitr)
+library(kableExtra)
+
+options(scipen = 5) 
+select <- dplyr::select
+options(knitr.kable.NA = '')
+
+gen_wcc <- function (n_cycles, method = c("Simpson1/3", "half-cycle", "none")) 
+{
+    if (n_cycles <= 0) {
+        stop("Number of cycles should be positive")
+    }
+    method <- match.arg(method)
+    n_cycles <- as.integer(n_cycles)
+    if (method == "Simpson1/3") {
+        v_cycles <- seq(1, n_cycles + 1)
+        v_wcc <- ((v_cycles%%2) == 0) * (2/3) + ((v_cycles%%2) != 
+                                                     0) * (4/3)
+        v_wcc[1] <- v_wcc[n_cycles + 1] <- 1/3
+    }
+    if (method == "half-cycle") {
+        v_wcc <- rep(1, n_cycles + 1)
+        v_wcc[1] <- v_wcc[n_cycles + 1] <- 0.5
+    }
+    if (method == "none") {
+        v_wcc <- rep(1, n_cycles + 1)
+    }
+    return(v_wcc)
+}
+```
+
+# Introduction
+
+The objective of this blog post is to construct a natural history model of any disease, location, and time period represented in the Global Burden of Disease study. 
+
+```{r}
+#| code-fold: false
+#| echo: true
+life_table_year = 2019 
+location = "United Kingdom"
+cause_id = 491 # CVD
+```
+
+# Step 1. Cause-Deleted Life Tables
+
+## Life Tables
+
+The GBD life table data are arranged by age group, so we need to download a separate file for each group, and extract the relevant location and year. 
+
+```{r}
+#| code-fold: true
+#| code-summary: Download and process GBD life table data. 
+
+radix = 100000
+
+age_group_lut <- c(
+    "5" = 1,
+    "6" = 5,
+    "7" = 10,
+    "8" = 15,
+    "9" = 20,
+    "10" = 25,
+    "11" = 30,
+    "12" = 35,
+    "13" = 40,
+    "14" = 45,
+    "15" = 50,
+    "16" = 55,
+    "17" = 60,
+    "18" = 65,
+    "19" = 70,
+    "20" = 75,
+    "30" = 80,
+    "31" = 85,
+    "32" = 90,
+    "33" = 95,
+    "44" = 100,
+    "45" = 105,
+    "148" = 110,
+    "28" = 0
+)
+
+if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))) {
+    cbd_life_tables <- c(
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_28_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_5_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_6_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_7_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_8_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_9_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_10_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_11_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_12_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_13_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_14_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_15_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_16_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_17_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_18_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_19_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_20_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_30_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_31_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_32_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_33_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_44_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_45_0.zip",
+      "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_148_0.zip"
+  )
+  
+  life_table <-
+    cbd_life_tables %>% map(~ ({
+      cat(glue::glue("File: {.x}\n"))
+      tmp <- tempfile()
+      tmpdir <- tempdir()
+      download.file(.x, tmp)
+      nn <-
+        gsub(
+          "https://ghdx.healthdata.org/sites/default/files/record-attached-files/",
+          "",
+          .x
+        ) %>% gsub(".ZIP|.zip", "", .)
+      unzip(tmp)
+      ff <- list.files(here(), pattern = ".CSV|.csv")
+      lt_age_group <-
+        ff[grep("WSHOCK", ff)] %>% map( ~ (read.csv(.x) %>% as_tibble() %>% mutate(file = .x))) %>% pluck(1) %>%
+        filter(year_id == life_table_year &
+                 location_name == location)
+      
+      file.remove(ff)
+      lt_age_group
+    })) %>%
+    bind_rows()
+  
+  lt <-
+    life_table %>%
+    group_by(location_name, location_id) %>%
+    nest()  %>%
+    mutate(life_table = map(data,  ~ ({
+      .x %>% select(sex_name, age_group_id, age_group_name, measure_name, val) %>%
+        mutate(age = age_group_lut[paste0(age_group_id)]) %>% 
+        spread(measure_name, val) %>%
+        janitor::clean_names() %>%
+        rename(ex = life_expectancy,
+               qx = probability_of_death) %>%
+        arrange(sex_name, age) %>%
+        select(sex_name, age, ex, qx) %>%
+        gather(measure, value, -sex_name, -age) %>%
+        mutate(measure = paste0(measure, gsub("_both", "", paste0("_", sex_name)))) %>%
+        select(-sex_name)  %>%
+        spread(measure, value) %>%
+        mutate(
+          p = 1 - qx,
+          p_male = 1 - qx_male,
+          p_female = 1 - qx_female
+        ) %>%
+        mutate(
+          lx = radix * cumprod(c(1, p[-nrow(.)])),
+          lx_male = radix * cumprod(c(1, p_male[-nrow(.)])),
+          lx_female = radix * cumprod(c(1, p_female[-nrow(.)]))
+        )
+    })))
+
+  lt <-
+    lt %>%
+    mutate(hp_mort = map(life_table,  ~ ({
+      ages     <- .x$age
+      deaths   <- .x$lx * .x$qx
+      exposure <- .x$lx
+      
+      mort_fit <- MortalityLaw(
+        x  = ages,
+        Dx  = deaths,
+        # vector with death counts
+        Ex  = exposure,
+        # vector containing exposures
+        law = "HP2",
+        opt.method = "LF2"
+      )
+      coef(mort_fit) %>% data.frame() %>% t()
+    })))
+
+  lt %>% write_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))
+  
+} 
+df_life_table = read_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))
+```
+
+### Life Tables 
+
+```{r}
+lt <- 
+    df_life_table %>% 
+    select(location_name,location_id,life_table) %>% 
+    unnest(cols = c(life_table))  %>% 
+    select(location_name, location_id, age, ex, qx)   %>% 
+    mutate(age_diff = c(1,lead(diff(age)))) %>% 
+    mutate(mx = -log(1 - qx)/age_diff) %>% 
+    select(location_name, location_id, age, ex, qx, mx)  %>% 
+    mutate(p = 1 - qx) %>%
+    mutate(cump = ifelse(row_number() == 1, 1, lag(cumprod(p)))) %>%
+    mutate(lx = radix * cump) %>%
+    mutate(dx = lx * qx) %>%
+    as.data.table()
+setkey(lt, age)
+```
+
+### Modeled Mortality 
+
+```{r}
+hp <- 
+    df_life_table %>% 
+    select(location_id, location_name, hp_mort) %>% 
+    mutate(hp_mort = map(hp_mort,~(data.frame(.x)))) %>% 
+    unnest(cols = c(hp_mort))
+```
+
+## GBD Incidence and Cause of Death Data
+
+We'll use the [GBD data tool](https://vizhub.healthdata.org/gbd-results/). Note you need a login to download. 
+
+::: {#fig-elephants layout-ncol=2}
+
+![Cause of Death](media/gbd-data-cause-of-death.png){#fig-cod}
+
+![Age Ranges](media/gbd-data-tool-age-ranges.png){#fig-agerange}
+
+Global Burden of Disease Data Query Tool
+:::
+
+You can then click on "Download." To obtain the data in the code below, I downloaded the .csv file and used the [datapasta](https://github.com/MilesMcBain/datapasta) package in R to simply copy and paste the values as a table. Alternatively, you could just manually load the .csv file.
+
+```{r get-gbd-data}
+#| code-fold: true
+#| code-summary: Download and process GBD CVD incidence and cause of death data. 
+
+
+df_gbd <- 
+tibble::tribble(
+    ~measure_id, ~measure_name, ~location_id,   ~location_name, ~sex_id, ~sex_name, ~age_id,     ~age_name, ~cause_id,               ~cause_name, ~metric_id, ~metric_name, ~year,        ~val,      ~upper,      ~lower,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.028996032, 0.032271777, 0.024354871,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.035378341, 0.038200527,  0.02982068,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.031923654, 0.033877513,  0.02749347,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.450558018, 0.518217768, 0.366558761,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.489648455, 0.546394959, 0.415998276,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.469612322, 0.520633016, 0.400518019,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.028030375, 0.030218263, 0.025065873,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.034179575, 0.038337972, 0.030031173,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.030684194, 0.032765225, 0.027736481,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.223162961, 0.243068851, 0.195925728,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.216691535, 0.243515145,  0.18996081,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.220004378, 0.236329232, 0.198461094,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      7L, "10-14 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.039746344, 0.041717485, 0.036621253,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      7L, "10-14 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.039007566, 0.043057948, 0.035699452,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      7L, "10-14 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.03942622, 0.041491836, 0.036825279,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      7L, "10-14 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.383598812, 0.405724933,  0.34991092,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      7L, "10-14 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.301487698, 0.333401339, 0.275739379,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      7L, "10-14 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.343507011,  0.36308575, 0.319699847,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      8L, "15-19 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.040429815, 0.042516915, 0.038634534,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      8L, "15-19 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.050448817, 0.056212097, 0.047257679,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      8L, "15-19 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.043765321, 0.046440911, 0.041928954,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      8L, "15-19 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1.272151624, 1.340633778, 1.215478459,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      8L, "15-19 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 0.830116477, 0.926181301, 0.778133659,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      8L, "15-19 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1.056297216, 1.122235147, 1.011670449,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      9L, "20-24 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.047865254, 0.049912826, 0.045757303,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      9L, "20-24 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.064022359, 0.070540903, 0.060728528,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      9L, "20-24 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.05241896, 0.055214123, 0.050297559,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",      9L, "20-24 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2.584733912, 2.705960617, 2.466297393,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",      9L, "20-24 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1.396334943, 1.540852926, 1.320505171,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",      9L, "20-24 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1.999067921, 2.108246777, 1.910639006,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     10L, "25-29 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.089939927,  0.09346508, 0.086949806,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     10L, "25-29 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.089152972, 0.094352463,  0.08473271,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     10L, "25-29 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.089703584, 0.092727269, 0.086724818,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     10L, "25-29 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 5.734533296, 5.967850508, 5.529144225,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     10L, "25-29 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2.476079844, 2.623849325, 2.341002774,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     10L, "25-29 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 4.117495802, 4.260669343, 3.978963164,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     11L, "30-34 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.127257147,  0.13212298, 0.122966034,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     11L, "30-34 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.101388841, 0.105278948, 0.097807228,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     11L, "30-34 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.118479515, 0.122297221, 0.114897896,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     11L, "30-34 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 10.53187361, 10.94789275, 10.15541571,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     11L, "30-34 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  4.35406213, 4.535772035, 4.190158194,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     11L, "30-34 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 7.458822907, 7.697315036, 7.229905553,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     12L, "35-39 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.164731863, 0.169563876, 0.159608872,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     12L, "35-39 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.115825591, 0.120310278,  0.11192131,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     12L, "35-39 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.146787432,  0.15076718, 0.142663671,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     12L, "35-39 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 18.48100716, 19.11206584, 17.88312257,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     12L, "35-39 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 7.595845898, 7.897360424, 7.306437613,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     12L, "35-39 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 13.06167796, 13.43788854, 12.69877405,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     13L, "40-44 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.203159048,  0.20891541, 0.195943858,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     13L, "40-44 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.129206482,  0.13385869,   0.1244222,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     13L, "40-44 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.175222389, 0.180012567, 0.169598709,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     13L, "40-44 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 34.46754982, 35.59363313, 33.10261974,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     13L, "40-44 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  13.3674334, 13.90211799, 12.83885807,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     13L, "40-44 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  23.9408787, 24.62393849, 23.10570335,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     14L, "45-49 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.235022661, 0.241826968, 0.226840899,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     14L, "45-49 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.137040316, 0.141886473, 0.132341184,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     14L, "45-49 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.195843982, 0.201187744, 0.189756704,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     14L, "45-49 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 57.64153172, 59.64549167,  55.4687179,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     14L, "45-49 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 22.06546161,  22.9227553, 21.21789055,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     14L, "45-49 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 39.72241359, 40.94841318, 38.38898409,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     15L, "50-54 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.277583327, 0.283873162, 0.270171622,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     15L, "50-54 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.145665326, 0.150899461,  0.14013874,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     15L, "50-54 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.223082899, 0.228558598,  0.21707824,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     15L, "50-54 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 102.4443991, 105.5930044, 99.34510962,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     15L, "50-54 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  36.9364505, 38.40924932, 35.41764292,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     15L, "50-54 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 69.29273074, 71.26787821, 67.22859058,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     16L, "55-59 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.285271809, 0.291369585, 0.277471527,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     16L, "55-59 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.150177365, 0.155825218,  0.14478974,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     16L, "55-59 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.229861955, 0.235028894, 0.223731529,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     16L, "55-59 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 167.4830541, 172.2242284, 162.1481434,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     16L, "55-59 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 59.90725095,  62.3881737, 57.55691512,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     16L, "55-59 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 113.0734263, 116.0596868, 109.7658926,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     17L, "60-64 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.281151021, 0.287179834, 0.273136951,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     17L, "60-64 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.170456967,  0.17712227,  0.16456188,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     17L, "60-64 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.236307862, 0.241466541, 0.229548522,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     17L, "60-64 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,   268.83905,  276.361035, 259.7994394,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     17L, "60-64 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 107.5466843, 112.1159275,  103.324387,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     17L, "60-64 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 186.9215396, 191.8272762, 181.0862897,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     18L, "65-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.278931352, 0.285390185, 0.270097256,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     18L, "65-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.189643852, 0.199262556,  0.18169671,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     18L, "65-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.24226236, 0.248654952, 0.234632356,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     18L, "65-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 419.0918214, 431.4790993, 404.4716545,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     18L, "65-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 188.0950489, 198.0374997, 180.4032472,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     18L, "65-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 300.4669833,  309.027596, 290.4451193,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     19L, "70-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.290219838, 0.297721979,  0.27908183,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     19L, "70-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.228546288, 0.241247991, 0.217055247,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     19L, "70-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.264132668, 0.270822598, 0.253757269,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     19L, "70-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 718.2484425, 740.2576009, 689.8783971,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     19L, "70-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 380.8726776, 402.6775444, 361.1707849,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     19L, "70-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 542.4055968, 558.3963894,  519.894653,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     20L, "75-79 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.305504066,  0.31501236,  0.28991667,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     20L, "75-79 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.274243167, 0.291526918,   0.2534384,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     20L, "75-79 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.291549172, 0.302042907,   0.2749541,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     20L, "75-79 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  1261.89787, 1304.650375, 1194.426145,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     20L, "75-79 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 787.6159218, 837.4076702, 725.4738778,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     20L, "75-79 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  1007.22694, 1045.701239, 946.8585675,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     25L, "50-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.280637165, 0.285934654, 0.273055284,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     25L, "50-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.170429973, 0.177027993, 0.164412797,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     25L, "50-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.235520163, 0.240311903, 0.229465139,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     25L, "50-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 223.4543262, 229.1140273, 216.5032114,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     25L, "50-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 91.11203448, 94.94062023, 87.74771187,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     25L, "50-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 156.2300101, 159.9320749, 151.8013825,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     28L,     "<1 year",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.00858897, 0.010099315, 0.006696668,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     28L,     "<1 year",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.00848085, 0.010271002, 0.006544871,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     28L,     "<1 year",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.008541898, 0.010077272, 0.006836472,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     28L,     "<1 year",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3.330450581, 4.156576477, 2.485530865,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     28L,     "<1 year",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2.655721293, 3.332256697, 1.951722168,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     28L,     "<1 year",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3.001802716, 3.744109822, 2.265385428,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     30L,       "80-84",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.323863277, 0.338597632, 0.294179612,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     30L,       "80-84",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.320968389,  0.34424093, 0.277353832,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     30L,       "80-84",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.322454879, 0.339212536, 0.286007648,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     30L,       "80-84",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2350.714411, 2464.746783, 2115.530404,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     30L,       "80-84",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  1717.38829, 1845.228956, 1482.945198,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     30L,       "80-84",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1994.660464,  2104.05733, 1763.636077,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     31L,       "85-89",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.333006314, 0.353674853, 0.292419986,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     31L,       "85-89",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.355395094, 0.385917974, 0.295950118,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     31L,       "85-89",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.345166391, 0.370659076,  0.29406337,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     31L,       "85-89",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 4259.496089,  4537.70974,  3739.26705,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     31L,       "85-89",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3505.823065, 3819.445125, 2924.110658,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     31L,       "85-89",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3802.353716, 4086.741745,   3239.6705,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     32L,       "90-94",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.347012504, 0.373106092, 0.294444394,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     32L,       "90-94",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,   0.3819742, 0.419626054, 0.306253645,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     32L,       "90-94",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.368727066, 0.401142671, 0.302323004,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     32L,       "90-94",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 7531.385885, 8114.087688, 6404.069434,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     32L,       "90-94",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 6853.993141, 7529.937194, 5521.436605,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     32L,       "90-94",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 7081.097512, 7697.566621,  5793.23943,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     41L, "50-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.284276872, 0.289881816, 0.275883579,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     41L, "50-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.19327508, 0.202233434, 0.185474593,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     41L, "50-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.246545226, 0.251873308, 0.239180583,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",     41L, "50-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 304.9005627, 312.7897016, 295.3683794,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",     41L, "50-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 140.9599264, 147.5119758, 135.1275867,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",     41L, "50-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 221.2598346, 226.8003663, 214.2987814,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",    235L,   "95+ years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.354344993, 0.386231837,  0.29265909,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",    235L,   "95+ years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.393392896, 0.434119892, 0.307881158,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",    235L,   "95+ years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.382935248, 0.420279524, 0.303833964,
+             1L,      "Deaths",          95L, "United Kingdom",      1L,    "Male",    235L,   "95+ years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 12002.04233, 13078.34657, 9872.784146,
+             1L,      "Deaths",          95L, "United Kingdom",      2L,  "Female",    235L,   "95+ years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 12202.06901,  13473.7584, 9504.961774,
+             1L,      "Deaths",          95L, "United Kingdom",      3L,    "Both",    235L,   "95+ years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 12151.87861,  13346.9543,  9633.43595,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     25L, "50-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.004427021, 0.005078144, 0.003817809,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     25L, "50-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.002897491, 0.003307504, 0.002518334,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     25L, "50-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.003648131, 0.004144026, 0.003162723,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     25L, "50-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1972.922887, 2183.340769, 1783.151307,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     25L, "50-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1297.746085, 1452.740976, 1159.106723,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     25L, "50-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1629.961478, 1804.956505, 1471.349106,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     28L,     "<1 year",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    2.91e-05,     4.1e-05,    1.94e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     28L,     "<1 year",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,     3.4e-05,    4.83e-05,    2.34e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     28L,     "<1 year",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    3.14e-05,    4.48e-05,    2.14e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     28L,     "<1 year",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  24.9433321, 33.96240142, 17.20782015,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     28L,     "<1 year",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  27.4884571, 37.70959202,  19.4225552,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     28L,     "<1 year",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 26.18301432, 35.92282821, 18.20916589,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     30L,       "80-84",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006985657, 0.008364013, 0.005750184,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     30L,       "80-84",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006563398, 0.007860287, 0.005399195,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     30L,       "80-84",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006751604, 0.008089858,  0.00558803,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     30L,       "80-84",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 4161.213887, 4821.321585, 3586.445187,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     30L,       "80-84",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3776.346094, 4384.426185, 3238.701183,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     30L,       "80-84",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3944.842428, 4557.939924,  3413.53611,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     31L,       "85-89",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.007242723, 0.008670361, 0.006080238,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     31L,       "85-89",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006763107,  0.00802545, 0.005733058,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     31L,       "85-89",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006955542, 0.008211624, 0.005897207,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     31L,       "85-89",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 4809.500805, 5599.626169, 4146.960721,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     31L,       "85-89",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 4337.652627, 5022.204185, 3779.822992,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     31L,       "85-89",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  4523.30004, 5241.389845, 3924.282623,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     32L,       "90-94",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.007008438, 0.008388593, 0.005838585,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     32L,       "90-94",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006764404, 0.008053951, 0.005709127,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     32L,       "90-94",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006847976, 0.008131149, 0.005757493,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     32L,       "90-94",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  5153.35834, 6054.284082, 4415.493281,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     32L,       "90-94",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 4794.899993, 5535.925139, 4168.347946,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     32L,       "90-94",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 4915.077627, 5704.042276, 4254.345879,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     41L, "50-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.00478628, 0.005371526, 0.004215691,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     41L, "50-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.003465161, 0.003938792, 0.003016288,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     41L, "50-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.004112838, 0.004618675,    0.003617,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     41L, "50-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2194.428451,  2406.85803, 1993.159002,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     41L, "50-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1585.679788, 1774.225227, 1422.457827,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     41L, "50-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  1883.85151, 2073.117622, 1709.401335,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    3.66e-05,    5.08e-05,    2.53e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    4.35e-05,    6.21e-05,    3.07e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    3.98e-05,    5.55e-05,    2.81e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 24.59324904,  32.3236423, 18.14212397,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 26.63263159, 34.91841748, 19.49651583,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 25.58732887, 33.35788704, 18.93808663,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    3.67e-05,    5.34e-05,    2.38e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    3.95e-05,    5.91e-05,    2.59e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    3.81e-05,    5.55e-05,    2.49e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  22.3310297, 29.90118254, 15.75228658,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 22.79052798, 31.18314184, 16.29025681,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  22.5553023, 30.36903203, 16.05870836,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",    235L,   "95+ years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006466182, 0.008113919,  0.00494906,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",    235L,   "95+ years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006717997, 0.008413103, 0.005246113,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",    235L,   "95+ years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006652245, 0.008337733, 0.005160268,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",    235L,   "95+ years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 5178.260058, 6399.752007, 4145.846455,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",    235L,   "95+ years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 5131.479569, 6198.777078, 4184.513358,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",    235L,   "95+ years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 5143.217659, 6229.849414, 4181.774145,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      7L, "10-14 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    4.67e-05,    6.82e-05,    3.08e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      7L, "10-14 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    4.09e-05,     6.2e-05,    2.66e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      7L, "10-14 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    4.39e-05,     6.5e-05,    2.89e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      7L, "10-14 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 22.87371889, 31.65284084,  16.4573203,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      7L, "10-14 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 20.23199773, 28.68155445, 14.22015021,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      7L, "10-14 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 21.58386475, 30.12858466, 15.54645087,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      8L, "15-19 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    7.22e-05, 0.000104325,    4.85e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      8L, "15-19 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    5.64e-05,    7.98e-05,    3.84e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      8L, "15-19 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    6.41e-05,     9.1e-05,    4.37e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      8L, "15-19 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 34.20250428, 46.12793294, 24.68278487,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      8L, "15-19 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 29.51771321, 39.71237203, 21.21899829,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      8L, "15-19 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 31.91482917, 42.67746643, 23.23585145,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      9L, "20-24 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.00011163, 0.000147235,     8.4e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      9L, "20-24 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,    9.12e-05, 0.000117658,    6.89e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      9L, "20-24 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000100777, 0.000131563,    7.71e-05,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",      9L, "20-24 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  54.5951151, 68.64899462, 42.89967879,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",      9L, "20-24 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 51.94509918, 63.09509796, 41.63066082,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",      9L, "20-24 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 53.28913602, 65.48823937, 42.45328627,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     10L, "25-29 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000158707, 0.000207095, 0.000117263,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     10L, "25-29 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000136054, 0.000173899, 0.000103402,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     10L, "25-29 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000146489, 0.000188698, 0.000109849,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     10L, "25-29 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 76.70838862, 93.77250984, 60.39124664,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     10L, "25-29 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 78.03707895, 94.15243505, 62.22901138,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     10L, "25-29 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 77.36776342, 94.19699663, 61.29602546,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     11L, "30-34 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000236315, 0.000300063, 0.000183309,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     11L, "30-34 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000168815, 0.000212039, 0.000129666,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     11L, "30-34 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000200002, 0.000251883,  0.00015506,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     11L, "30-34 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 114.2120994, 133.3595391, 95.66979032,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     11L, "30-34 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 95.90878029, 112.3761348, 79.98772686,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     11L, "30-34 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 105.1074144,  122.658906, 88.44256099,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     12L, "35-39 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000347394, 0.000453312, 0.000270394,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     12L, "35-39 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000193038, 0.000245021, 0.000153326,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     12L, "35-39 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000265664, 0.000339163, 0.000209296,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     12L, "35-39 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 167.1175818, 202.0579812, 138.5905463,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     12L, "35-39 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 105.3475316, 124.0452099,  89.9565812,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     12L, "35-39 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 136.3645016, 162.6483674, 115.1871198,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     13L, "40-44 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000835388, 0.001023785, 0.000655528,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     13L, "40-44 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000603191, 0.000738318, 0.000478687,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     13L, "40-44 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000713624, 0.000864301, 0.000569002,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     13L, "40-44 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 384.8955549, 434.9926458, 338.5765355,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     13L, "40-44 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 307.5936835, 349.2217189, 267.4334345,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     13L, "40-44 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 346.3302996, 388.3935502, 306.5318635,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     14L, "45-49 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.001508699, 0.001919095, 0.001135102,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     14L, "45-49 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000807068, 0.001040227,  0.00061275,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     14L, "45-49 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.001140713, 0.001440407, 0.000876251,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     14L, "45-49 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 664.2277732, 785.5254694, 550.7914263,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     14L, "45-49 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,  386.048847, 474.1180626, 314.1720448,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     14L, "45-49 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 524.1133361,  619.976481, 437.6751311,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     15L, "50-54 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.002633258, 0.003203164, 0.002128852,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     15L, "50-54 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.001326599,  0.00163697, 0.001070251,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     15L, "50-54 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,   0.0019557,  0.00239358, 0.001601614,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     15L, "50-54 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L,   1140.2292, 1286.609938, 999.7682213,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     15L, "50-54 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 603.6877022, 695.1201457,  518.048283,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     15L, "50-54 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 868.7011461, 979.7466799, 763.2998709,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     16L, "55-59 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.004204248, 0.005237554, 0.003290237,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     16L, "55-59 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.002204806, 0.002739343, 0.001726623,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     16L, "55-59 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.003187612, 0.003910492, 0.002515045,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     16L, "55-59 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1804.405504, 2137.561767, 1516.901006,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     16L, "55-59 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 956.2414154, 1139.293354, 792.3649777,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     16L, "55-59 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1375.421559, 1618.977162, 1154.786978,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     17L, "60-64 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.005447639, 0.006505564, 0.004396856,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     17L, "60-64 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.003639274, 0.004311934, 0.002988642,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     17L, "60-64 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.004538721,  0.00539902, 0.003725753,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     17L, "60-64 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2394.559222, 2706.417654, 2122.400887,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     17L, "60-64 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1565.638269, 1778.970591, 1380.985421,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     17L, "60-64 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 1973.565082, 2231.553114, 1752.133146,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     18L, "65-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006009328, 0.007365994, 0.004737917,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     18L, "65-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.005129966, 0.006403949, 0.004026852,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     18L, "65-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.005564837, 0.006856215, 0.004415209,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     18L, "65-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2908.778347, 3387.432236, 2421.804073,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     18L, "65-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2402.344734, 2879.709168, 1958.743969,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     18L, "65-69 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2648.707158, 3117.504164, 2198.479731,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     19L, "70-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006372452, 0.007564146, 0.005124882,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     19L, "70-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.005920085, 0.007032463, 0.004847155,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     19L, "70-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006140623, 0.007282752, 0.004987772,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     19L, "70-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3318.591571, 3781.522952, 2836.207168,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     19L, "70-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 2971.474942,  3406.04759, 2572.284332,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     19L, "70-74 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3137.671712, 3587.877828, 2728.823411,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     20L, "75-79 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006725001, 0.008257301, 0.005419978,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     20L, "75-79 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006329174, 0.007735237, 0.005093644,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     20L, "75-79 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.006515635, 0.007885192, 0.005288763,
+             6L,   "Incidence",          95L, "United Kingdom",      1L,    "Male",     20L, "75-79 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3661.648917, 4282.318944, 3098.287225,
+             6L,   "Incidence",          95L, "United Kingdom",      2L,  "Female",     20L, "75-79 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3327.243918, 3900.027926, 2789.070287,
+             6L,   "Incidence",          95L, "United Kingdom",      3L,    "Both",     20L, "75-79 years",      491L, "Cardiovascular diseases",         3L,       "Rate", 2019L, 3482.086459, 4048.435372, 2933.525299
+    )
+
+
+```
+
+# Parameterize Model
+
+```{r}
+# Parameterize
+
+   lut_age_incidence = 
+      tibble::tribble(
+        ~age_name, ~age,
+        "<1 year",  0L,
+        "1-4 years",  1L,
+        "5-9 years",  5L,
+        "10-14 years", 10L,
+        "15-19 years", 15L,
+        "20-24 years", 20L,
+        "25-29 years", 25L,
+        "30-34 years", 30L,
+        "35-39 years", 35L,
+        "40-44 years", 40L,
+        "45-49 years", 45L,
+        "50-54 years", 50L,
+        "55-59 years", 55L,
+        "60-64 years", 60L,
+        "65-69 years", 65L,
+        "70-74 years", 70L,
+        "75-79 years", 75L,
+        "80-84", 80L,
+        "85-89", 85L,
+        "90-94", 90L,
+        "95+ years", 95L
+      )
+
+params <- list(
+    # Treatment Strategies
+    tx_names = c("natural_history","prevent","treat","prevent_treat"),      # treatment names
+    n_tx = 4, # number of treatment strategies
+    
+    tr_names = c("Healthy","CVD"), # transient health states
+    ab_names = c("DeathOC","DeathCVD"), # absorbing health states
+    n_states = 4,
+    
+    df_gbd = df_gbd,
+    life_table = lt, 
+    
+    horizon = 100,  
+    r_ann = 1e-6,
+    Delta_t = 1,
+    age0 = 0,
+    s0T = c(1,0,0,0),
+    
+    uCVD = 0.773,
+    uD = 0,
+    uH = 1,
+    
+    dw = 0.041,
+    
+    c_Prevent = 10,
+    c_Treat = 500,
+    c_CVD = 500, 
+    c_DeathCVD = 25000,
+    
+    hr_treat = 0.85,
+    hr_prevent = 0.9,
+    
+    cycle_correction = "half-cycle",
+    
+    ExR = 
+    # Global Burden of Disease Collaborative Network. Global Burden of Disease Study 
+    # 2019 (GBD 2019) Reference Life Table. Seattle, United States of America: 
+    # Institute for Health Metrics and Evaluation (IHME), 2020
+    tibble::tribble(
+        ~Age, ~Life.Expectancy,
+        0L,       88.8718951,
+        1L,      88.00051053,
+        5L,      84.03008056,
+        10L,      79.04633476,
+        15L,       74.0665492,
+        20L,      69.10756792,
+        25L,      64.14930031,
+        30L,       59.1962771,
+        35L,      54.25261364,
+        40L,      49.31739311,
+        45L,      44.43332057,
+        50L,      39.63473787,
+        55L,      34.91488095,
+        60L,      30.25343822,
+        65L,      25.68089534,
+        70L,      21.28820012,
+        75L,      17.10351469,
+        80L,      13.23872477,
+        85L,      9.990181244,
+        90L,      7.617724915,
+        95L,      5.922359078
+    )
+)
+
+params <- 
+    with(params,{
+        modifyList(params,list(
+            omega = horizon/Delta_t,
+            r_Delta_t = r_ann * Delta_t,
+            ages = (0:(horizon/Delta_t))*Delta_t + age0,
+            fExR = function(x) pmax(0,unname(Hmisc::approxExtrap(ExR$Age, ExR$Life.Expectancy,xout = x)$y))
+        ))
+    })
+```
+
+## Define Functions for Time Inhomogeneous Parameters
+
+
+### Disease Incidence 
+
+```{r}
+#| code-fold: true
+#| code-summary: Age-dependent incidence rate function
+
+rH_CVD <- function(aa,gg = "Both") {
+  df_gbd %>% 
+    filter(measure_name == "Incidence" & sex_name==gg & metric_name=="Rate") %>% 
+    inner_join(lut_age_incidence,"age_name") %>% 
+    select(age, cvd_incidence = val, upper_cvd_incidence = upper, lower_cvd_incidence = lower) %>% 
+    arrange(age) %>% 
+    mutate(age_diff = c(1,lead(diff(age)))) %>% 
+    mutate(age_diff = ifelse(age==95,5,age_diff)) %>% 
+    mutate_at(vars(contains("incidence")),function(x) x/.$age_diff) %>% 
+    as.data.table() %>% 
+    setkey(.,age) %>% 
+    {.[data.table(age=aa) %>% setkey(.,age),roll="nearest"]} %>% 
+    pull(cvd_incidence) %>% 
+    {./100000}
+}
+rH_CVD(25)
+```
+
+### Mortality
+
+```{r}
+#| code-fold: true
+#| code-summary: Age-dependent mortality rate function 
+
+rD <- function(aa, gg = "Both") {
+  setkey(lt, age)
+  
+  pct_cvd <-
+    df_gbd %>%
+    filter(measure_name == "Deaths" & sex_name == gg & metric_name=="Percent") %>%
+    inner_join(lut_age_incidence, "age_name") %>%
+    select(
+      age,
+      pct_cvd = val,
+      upper_pct_cvd = upper,
+      lower_pct_cvd = lower
+    ) %>%
+    as.data.table()
+  setkey(pct_cvd, age)
+  
+  lt_cvd <-
+    pct_cvd[lt, roll = "nearest"] %>%
+    as_tibble() %>%
+    mutate(dx_cvd = lx * qx * pct_cvd) %>%
+    mutate(dx_nocvd  = dx - dx_cvd,
+           R_nocvd = (dx - dx_cvd) / dx) %>%
+    mutate(mx_nocvd = R_nocvd * mx,
+           mx_cvd = mx - mx_nocvd) %>%
+    na.omit()
+  
+  r <-
+    lt_cvd %>%
+    as.data.table() %>%
+    setkey(., age) %>%
+    {
+      .[data.table(age = aa) %>% setkey(., age), roll = "nearest"]
+    } %>%
+    pull(mx_nocvd)
+
+  return(r)
+  
+}
+
+rCVD_D <- function(aa, gg = "Both") {
+  setkey(lt, age)
+  
+  pct_cvd <-
+    df_gbd %>%
+    filter(measure_name == "Deaths" & sex_name == gg & metric_name=="Percent") %>%
+    inner_join(lut_age_incidence, "age_name") %>%
+    select(
+      age,
+      pct_cvd = val,
+      upper_pct_cvd = upper,
+      lower_pct_cvd = lower
+    ) %>%
+    as.data.table()
+  setkey(pct_cvd, age)
+  
+  lt_cvd <-
+    pct_cvd[lt, roll = "nearest"] %>%
+    as_tibble() %>%
+    mutate(dx_cvd = lx * qx * pct_cvd) %>%
+    mutate(dx_nocvd  = dx - dx_cvd,
+           R_nocvd = (dx - dx_cvd) / dx) %>%
+    mutate(mx_nocvd = R_nocvd * mx,
+           mx_cvd = mx - mx_nocvd) %>%
+    na.omit()
+
+  r <-
+    lt_cvd %>%
+    as.data.table() %>%
+    setkey(., age) %>%
+    {
+      .[data.table(age = aa) %>% setkey(., age), roll = "nearest"]
+    } %>%
+    pull(mx_cvd)
+  return(r)
+  
+}
+
+```
+
+## Rate Matrix Functions
+
+```{r}
+# TEMPORARY
+#attach(params)
+```
+
+```{r}
+
+params1 <- with(params,modifyList(params,list(
+    # Natural History Transition Rate Matrix
+    mR = 
+      ages %>% map(~({
+        
+        mR_nh = 
+          matrix(c(
+          -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ rCVD_D(.x)), rD(.x),rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+        
+        mR_prevent = 
+          matrix(c(
+          -(hr_prevent * rH_CVD(.x) + rD(.x)), hr_prevent * rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ rCVD_D(.x)), rD(.x),rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          )) 
+        
+        mR_treat = 
+          matrix(c(
+          -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ hr_treat * rCVD_D(.x)), rD(.x),hr_treat * rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+        
+        mR_prevent_treat = 
+          matrix(c(
+          -(hr_prevent * rH_CVD(.x) + rD(.x)), hr_prevent * rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ hr_treat * rCVD_D(.x)), rD(.x),hr_treat * rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+        array(c(as.vector(mR_nh),as.vector(mR_prevent), as.vector(mR_treat),as.vector(mR_prevent_treat)), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
+          dimnames = list(c(tr_names,ab_names),c(tr_names,ab_names),tx_names)) %>% 
+            apply(.,3,function(x) x, simplify=FALSE) 
+      }))   
+)))
+
+params1 <- with(params1,modifyList(params1,list(
+    mP = mR %>% transpose() %>% map(~({
+      mR_ = .x
+      mR_ %>% map(~({
+              expm(.x * Delta_t)
+         }))
+      })) 
+)))
+
+disc = 
+  exp(-params1$r_Delta_t * 0:(params1$omega))
+
+```
+
+```{r}
+trace1 <- 
+    with(params1, {
+        mP %>% map( ~ ({
+            P = .x
+            occ <- s0T
+            P %>% map(~({
+              occ <<- occ %*% .x
+            })) %>% 
+            map(~(data.frame(.x))) %>% 
+            bind_rows()
+        }))
+    }) 
+tr <- trace1$natural_history
+```
+
+```{r}
+# Check Life Expectancy vs. Life Table
+d_ <- c(1,1,0,0)
+sum(gen_wcc(params1$omega,"half-cycle")*as.matrix(tr) %*% d_)
+lt %>% filter(age==params1$age0) %>% pull(ex)
+```
+
+```{r}
+trace1 %>% map(~({
+  data.frame(.x) %>% 
+  as_tibble() %>% 
+  mutate(age = params1$ages)
+  })) %>% 
+  bind_rows(.id = "strategy") %>% 
+  gather(state,occpuancy,-age,-strategy) %>% 
+  ggplot() + geom_line(aes(x = age, y = occpuancy, colour = strategy)) +
+  scale_color_aaas() + 
+  facet_wrap(~state,scales="free") +
+  hrbrthemes::theme_ipsum()
+```
+
+```{r}
+# Life Expectancy (Non-Discounted)
+le_ = with(params1,(matrix(c(1,
+              1 ,
+              0,
+              0),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
+
+LEt <- trace1 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% le_
+    tmp 
+}))
+
+LE = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) ; LE
+
+# YLD
+
+yld_ = with(params1,(matrix(c(0,
+              dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t)) ,
+              0,
+              0),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
+
+
+YLDt <- trace1 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% yld_
+    tmp 
+}))
+
+YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
+YLD
+
+# YLL
+
+new_deaths_from_disease <- 
+    map(trace1,~({
+        c(0,diff(.x[,"DeathCVD"]))
+    })) 
+   
+remaining_life_expectancy <- 
+    with(params1,(1/r_ann) * (1 - exp(-r_ann * fExR(ages))))
+    
+YLLt <- 
+    new_deaths_from_disease %>% map(~(.x * remaining_life_expectancy ))
+
+YLL <- 
+    YLLt %>% map(~(sum(.x * disc * gen_wcc(params1$omega,method = params1$cycle_correction))))
+
+DALY <- 
+    map2(YLL,YLD,~(.x + .y))
+
+result1 <- cbind(LE, YLD,YLL,DALY) %>% 
+    as.data.frame() %>% 
+    mutate_all(~as.numeric(.))  %>% 
+    rownames_to_column(var="strategy") %>% 
+    mutate(approach = "Markov Trace") %>% 
+   mutate(LE_LT = lt %>% filter(age==params1$age0) %>% pull(ex)) %>% 
+  mutate(LE_LT = ifelse(strategy !="natural_history",NA,LE_LT)) %>% 
+    dplyr::select(approach, strategy, LE_LT, LE, YLD, YLL, DALY) 
+
+result1 %>% 
+    kable(digits = 3, col.names = c("Approach","Scenario","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
+    kable_styling()
+```
+
+
+
