@@ -17,6 +17,8 @@ self-contained: true
 image: "media/DALY-image.svg"
 ---
 
+- Look into whether we use ages or ages[-1].
+
 ```{r setup}
 #| code-fold: true
 #| code-summary: Setup R session
@@ -771,15 +773,9 @@ rCVD_D <- function(aa, gg = "Both") {
 
 ```
 
-## Rate Matrix Functions
+# Approach 1: Markov Trace
 
 ```{r}
-# TEMPORARY
-#attach(params)
-```
-
-```{r}
-
 params1 <- with(params,modifyList(params,list(
     # Natural History Transition Rate Matrix
     mR = 
@@ -964,5 +960,204 @@ result1 %>%
     kable_styling()
 ```
 
+# Approach 2: Transition States
 
+```{r}
+
+params2 <- with(params,modifyList(params,list(
+    tr_names = c("Healthy","CVD"), # transient health states
+    ab_names = c("Death","trDeathCVD"), # absorbing health states
+    n_states = 4
+)))
+
+params2 <- with(params2,modifyList(params2,list(
+    # Natural History Transition Rate Matrix
+    mR = 
+      ages %>% map(~({
+        
+        mR_nh = 
+          matrix(c(
+          -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ rCVD_D(.x)), rD(.x) + rCVD_D(.x),rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+        
+        mR_prevent = 
+          matrix(c(
+          -(hr_prevent * rH_CVD(.x) + rD(.x)), hr_prevent * rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ rCVD_D(.x)), rD(.x) + rCVD_D(.x),rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          )) 
+        
+        mR_treat = 
+          matrix(c(
+          -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ hr_treat * rCVD_D(.x)), rD(.x) + hr_treat * rCVD_D(.x),hr_treat * rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+        
+        mR_prevent_treat = 
+          matrix(c(
+          -(hr_prevent * rH_CVD(.x) + rD(.x)), hr_prevent * rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ hr_treat * rCVD_D(.x)), rD(.x) + hr_treat * rCVD_D(.x),hr_treat * rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+        array(c(as.vector(mR_nh),as.vector(mR_prevent), as.vector(mR_treat),as.vector(mR_prevent_treat)), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
+          dimnames = list(c(tr_names,ab_names),c(tr_names,ab_names),tx_names)) %>% 
+            apply(.,3,function(x) x, simplify=FALSE) 
+      }))   
+)))
+
+params2 <- with(params2,modifyList(params2,list(
+    mP = mR %>% transpose() %>% map(~({
+      mR_ = .x
+      mR_ %>% map(~({
+              tmp = expm(.x * Delta_t)
+              tmp["trDeathCVD","trDeathCVD"] = 0
+              tmp
+         }))
+      })) 
+)))
+
+disc = 
+  exp(-params2$r_Delta_t * 0:(params2$omega))
+
+```
+
+```{r}
+trace2 <- 
+    with(params2, {
+        mP %>% map( ~ ({
+            P = .x
+            occ <- s0T
+            P %>% map(~({
+              occ <<- occ %*% .x
+            })) %>% 
+            map(~(data.frame(.x))) %>% 
+            bind_rows()
+        }))
+    }) 
+tr <- trace2$natural_history
+```
+
+```{r}
+# Check Life Expectancy vs. Life Table
+d_ <- c(1,1,0,0)
+sum(gen_wcc(params2$omega,"half-cycle")*as.matrix(tr) %*% d_)
+lt %>% filter(age==params2$age0) %>% pull(ex)
+```
+
+```{r}
+trace2 %>% map(~({
+  data.frame(.x) %>% 
+  as_tibble() %>% 
+  mutate(age = params1$ages)
+  })) %>% 
+  bind_rows(.id = "strategy") %>% 
+  gather(state,occpuancy,-age,-strategy) %>% 
+  ggplot() + geom_line(aes(x = age, y = occpuancy, colour = strategy)) +
+  scale_color_aaas() + 
+  facet_wrap(~state,scales="free") +
+  hrbrthemes::theme_ipsum()
+```
+
+```{r}
+# Life Expectancy (Non-Discounted)
+le_ = with(params2,(matrix(c(1,
+              1 ,
+              0,
+              0),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
+
+LEt <- trace2 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% le_
+    tmp 
+}))
+
+LE = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) ; LE
+
+# YLD
+
+yld_ = with(params2,(matrix(c(0,
+              dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t)) ,
+              0,
+              0),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
+
+
+YLDt <- trace2 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% yld_
+    tmp 
+}))
+
+YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
+
+
+# # YLL
+# 
+# Ex <- matrix(0,ncol= 4, nrow = params2$omega)
+# colnames(Ex) = rownames(params2$mP$natural_history[[1]])
+# rownames(Ex) = params2$ages[-length(params2$ages)]
+# Ex[,"trSickDead"] = with(params,(1/r_ann) * (1 - exp(-r_ann * fExR(ages[-1]))))
+# 
+# YLLt2 = trace2 %>% map(~({
+#     apply(.x * Ex  ,1,sum)
+#     }))
+# 
+# YLL2 = 
+#     YLLt2 %>% 
+#     map(~(.x * disc * gen_wcc(params$omega-1, params2$cycle_correction))) %>% 
+#     map(~(sum(.x)))
+# 
+# DALY2 <- 
+#     map2(YLL2,YLD2,~(.x + .y))
+# 
+# result2 <- cbind(LE2, YLD2,YLL2,DALY2) %>% 
+#     as.data.frame() %>% 
+#     mutate_all(~as.numeric(.))  %>% 
+#     rownames_to_column(var="strategy") %>% 
+#     mutate(approach = "Transition States") %>% 
+#     dplyr::select(approach, strategy, LE = LE2, YLD=YLD2, YLL=YLL2, DALY=DALY2) 
+# 
+# tib <- result1 %>% 
+#     bind_rows(result2) 
+# 
+# tib %>% 
+#     arrange(strategy) %>% 
+#     select(-strategy) %>% 
+#     kable(digits = 3, col.names = c("Approach","Life Expectancy","YLDs","YLLs","DALYs"),) %>% 
+#     kable_styling() %>% 
+#     pack_rows(index = c("natural_history" = 2, "prevention" = 2, "treatment" = 2)) %>% 
+#     kable_styling()
+```
 
