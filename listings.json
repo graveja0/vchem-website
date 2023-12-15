@@ -2,8 +2,7 @@
   {
     "listing": "/index.html",
     "items": [
-      "/blog/posts/cdfs/estimating-cdfs.html",
-      "/blog/posts/transfinite/transfinite.html",
+      "/blog/posts/dalys/modeling-dalys.html",
       "/blog/posts/mvpf-evpi/mvpf-evpi.html",
       "/blog/posts/mvpf-evppi/mvpf-evppi.html",
       "/blog/posts/mvpf-evsi/mvpf-evsi.html"
@@ -12,8 +11,7 @@
   {
     "listing": "/blog/index.html",
     "items": [
-      "/blog/posts/cdfs/estimating-cdfs.html",
-      "/blog/posts/transfinite/transfinite.html",
+      "/blog/posts/dalys/modeling-dalys.html",
       "/blog/posts/mvpf-evsi/mvpf-evsi.html",
       "/blog/posts/mvpf-evpi/mvpf-evpi.html",
       "/blog/posts/mvpf-evppi/mvpf-evppi.html"
