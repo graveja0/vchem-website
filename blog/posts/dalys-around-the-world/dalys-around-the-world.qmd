@@ -1,5 +1,6 @@
 ---
-title: "DALYs Around the World"
+title: "Construction of a Policy Decision Model Using Global Burden of Disease Data"
+subtitle: "Structuring and Adapting Models for Multidimensional Health Outcomes"
 author: John Graves
 date: "2023-12-15"
 categories: [CEA]
@@ -17,7 +18,7 @@ self-contained: true
 image: "media/DALY-image.svg"
 ---
 
-- Look into whether we use ages or ages[-1].
+
 
 ```{r setup}
 #| code-fold: true
@@ -36,6 +37,7 @@ library(ggsci)
 library(directlabels)
 library(knitr)
 library(kableExtra)
+library(hrbrthemes)
 
 options(scipen = 5) 
 select <- dplyr::select
@@ -239,16 +241,6 @@ lt <-
     mutate(dx = lx * qx) %>%
     as.data.table()
 setkey(lt, age)
-```
-
-### Modeled Mortality 
-
-```{r}
-hp <- 
-    df_life_table %>% 
-    select(location_id, location_name, hp_mort) %>% 
-    mutate(hp_mort = map(hp_mort,~(data.frame(.x)))) %>% 
-    unnest(cols = c(hp_mort))
 ```
 
 ## GBD Incidence and Cause of Death Data
@@ -559,32 +551,31 @@ tibble::tribble(
 
 ```{r}
 # Parameterize
-
-   lut_age_incidence = 
-      tibble::tribble(
-        ~age_name, ~age,
-        "<1 year",  0L,
-        "1-4 years",  1L,
-        "5-9 years",  5L,
-        "10-14 years", 10L,
-        "15-19 years", 15L,
-        "20-24 years", 20L,
-        "25-29 years", 25L,
-        "30-34 years", 30L,
-        "35-39 years", 35L,
-        "40-44 years", 40L,
-        "45-49 years", 45L,
-        "50-54 years", 50L,
-        "55-59 years", 55L,
-        "60-64 years", 60L,
-        "65-69 years", 65L,
-        "70-74 years", 70L,
-        "75-79 years", 75L,
-        "80-84", 80L,
-        "85-89", 85L,
-        "90-94", 90L,
-        "95+ years", 95L
-      )
+lut_age_incidence = 
+tibble::tribble(
+  ~age_name, ~age,
+  "<1 year",  0L,
+  "1-4 years",  1L,
+  "5-9 years",  5L,
+  "10-14 years", 10L,
+  "15-19 years", 15L,
+  "20-24 years", 20L,
+  "25-29 years", 25L,
+  "30-34 years", 30L,
+  "35-39 years", 35L,
+  "40-44 years", 40L,
+  "45-49 years", 45L,
+  "50-54 years", 50L,
+  "55-59 years", 55L,
+  "60-64 years", 60L,
+  "65-69 years", 65L,
+  "70-74 years", 70L,
+  "75-79 years", 75L,
+  "80-84", 80L,
+  "85-89", 85L,
+  "90-94", 90L,
+  "95+ years", 95L
+)
 
 params <- list(
     # Treatment Strategies
@@ -598,7 +589,7 @@ params <- list(
     df_gbd = df_gbd,
     life_table = lt, 
     
-    horizon = 100,  
+    horizon = 120,  
     r_ann = 1e-6,
     Delta_t = 1,
     age0 = 0,
@@ -685,10 +676,66 @@ rH_CVD <- function(aa,gg = "Both") {
     pull(cvd_incidence) %>% 
     {./100000}
 }
-rH_CVD(25)
+
 ```
 
 ### Mortality
+
+```{r}
+fit_mort <- function(params, mortality_model = "HP2", gg = "Both", outcome = "dx_nocvd") {
+    with(params,({
+        
+        pct_cvd <-
+            df_gbd %>%
+            filter(measure_name == "Deaths" & sex_name == gg & metric_name=="Percent") %>%
+            inner_join(lut_age_incidence, "age_name") %>%
+            select(
+                age,
+                pct_cvd = val,
+                upper_pct_cvd = upper,
+                lower_pct_cvd = lower
+            ) %>%
+            as.data.table() %>% 
+            arrange(age)
+        setkey(pct_cvd, age)
+        
+        lt_cvd <-
+            pct_cvd[lt, roll = "nearest"] %>%
+            as_tibble() %>%
+            mutate(age_diff = c(1,diff(age))) %>% 
+            mutate(dx_cvd = (lx * qx * pct_cvd)/age_diff) %>%
+            mutate(dx_nocvd  = (dx - dx_cvd)/age_diff) %>% 
+            mutate(dx = lx * qx / age_diff) %>% 
+            na.omit() 
+        
+        ages = lt_cvd$age
+        deaths = unname(unlist(lt_cvd[,outcome]))
+        exposure = lt_cvd$lx
+        
+        fit_hp <- 
+            MortalityLaw(
+                x  = ages,
+                Dx  = deaths,
+                # vector with death counts
+                Ex  = exposure,
+                # vector containing exposures
+                law = "HP2",
+                opt.method = "LF2"
+            )
+        
+        return(fit_hp)
+    }))
+}
+
+params <- modifyList(params,{
+    list(
+        mort_fit_dx = params %>% fit_mort(outcome = "dx") %>% coef(.), 
+        mort_fit_dx_nocvd = params %>% fit_mort(outcome = "dx_nocvd")  %>% coef() , 
+        mort_fit_dx_cvd = params %>% fit_mort(outcome = "dx_cvd")  %>% coef()
+    )
+})
+
+```
 
 ```{r}
 #| code-fold: true
@@ -707,7 +754,8 @@ rD <- function(aa, gg = "Both") {
       upper_pct_cvd = upper,
       lower_pct_cvd = lower
     ) %>%
-    as.data.table()
+    as.data.table() %>% 
+    arrange(age)
   setkey(pct_cvd, age)
   
   lt_cvd <-
@@ -718,7 +766,7 @@ rD <- function(aa, gg = "Both") {
            R_nocvd = (dx - dx_cvd) / dx) %>%
     mutate(mx_nocvd = R_nocvd * mx,
            mx_cvd = mx - mx_nocvd) %>%
-    na.omit()
+    na.omit() 
   
   r <-
     lt_cvd %>%
@@ -728,9 +776,7 @@ rD <- function(aa, gg = "Both") {
       .[data.table(age = aa) %>% setkey(., age), roll = "nearest"]
     } %>%
     pull(mx_nocvd)
-
   return(r)
-  
 }
 
 rCVD_D <- function(aa, gg = "Both") {
@@ -746,7 +792,8 @@ rCVD_D <- function(aa, gg = "Both") {
       upper_pct_cvd = upper,
       lower_pct_cvd = lower
     ) %>%
-    as.data.table()
+    as.data.table() %>% 
+      arrange(age)
   setkey(pct_cvd, age)
   
   lt_cvd <-
@@ -771,6 +818,28 @@ rCVD_D <- function(aa, gg = "Both") {
   
 }
 
+rD_unadj_p = function(aa,params) {
+    with(params,{
+         coef_ <- mort_fit_dx
+        HP2(aa,coef_)$hx   
+    })
+}
+
+rD_p = function(aa,params) {
+      with(params,{
+         coef_ <- mort_fit_dx_nocvd
+        HP2(aa,coef_)$hx   
+    })
+}
+
+rCVD_D_p = function(aa,params) {
+      with(params,{
+         coef_ <- mort_fit_dx_cvd
+        HP2(aa,coef_)$hx   
+    })
+}
+
+
 ```
 
 # Approach 1: Markov Trace
@@ -780,7 +849,6 @@ params1 <- with(params,modifyList(params,list(
     # Natural History Transition Rate Matrix
     mR = 
       ages %>% map(~({
-        
         mR_nh = 
           matrix(c(
           -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
@@ -793,6 +861,19 @@ params1 <- with(params,modifyList(params,list(
           dimnames = list(c(tr_names,ab_names),
                           c(tr_names,ab_names)
           ))
+        
+        # mR_nh_p = # Use parametric mortality coefficients rather than life table. 
+        #   matrix(c(
+        #   -(rH_CVD(.x) + rD_p(.x,params = params)), rH_CVD(.x), rD_p(.x,params = params), 0 ,
+        #   0, -(rD_p(.x,params = params)+ rCVD_D_p(.x,params = params)), rD_p(.x,params = params),rCVD_D_p(.x,params = params),
+        #   0,0,0,0,
+        #   0,0,0,0),
+        #   nrow = 4,
+        #   ncol = 4,
+        #   byrow=TRUE,
+        #   dimnames = list(c(tr_names,ab_names),
+        #                   c(tr_names,ab_names)
+        # ))
         
         mR_prevent = 
           matrix(c(
@@ -848,7 +929,7 @@ params1 <- with(params1,modifyList(params1,list(
 )))
 
 disc = 
-  exp(-params1$r_Delta_t * 0:(params1$omega))
+  exp(-params1$r_Delta_t * 0:(params1$omega+1))
 
 ```
 
@@ -864,30 +945,51 @@ trace1 <-
             map(~(data.frame(.x))) %>% 
             bind_rows()
         }))
-    }) 
-tr <- trace1$natural_history
+    })  %>% 
+    map(~({
+        tmp = .x[1,]
+        tmp[1,] = params$s0T
+        tmp = rbind(tmp,.x)
+    }))
+tr <- trace1$natural_history[-nrow(trace1$natural_history),]
 ```
+
 
 ```{r}
 # Check Life Expectancy vs. Life Table
+lt_ <- df_life_table %>% 
+    select(location_name,location_id,life_table) %>% 
+    unnest(cols = c(life_table))  %>% 
+    select(location_name, location_id, age, ex, qx)   %>% 
+    filter(age >= params1$age0) %>% 
+    mutate(age_diff = c(1,lead(diff(age)))) %>% 
+    mutate(mx = -log(1 - qx)/age_diff) %>% 
+    select(location_name, location_id, age, ex, qx, mx)  %>% 
+    mutate(p = 1 - qx) %>%
+    mutate(cump = ifelse(row_number() == 1, 1, lag(cumprod(p)))) %>%
+    mutate(lx = radix * cump) %>%
+    mutate(dx = lx * qx) %>%
+    as.data.table()
+
 d_ <- c(1,1,0,0)
-sum(gen_wcc(params1$omega,"half-cycle")*as.matrix(tr) %*% d_)
-lt %>% filter(age==params1$age0) %>% pull(ex)
+as.matrix(tr) %*% d_ %>% data.frame() %>% 
+    as_tibble() %>% 
+    set_names(c('model')) %>% 
+    mutate(age = params$ages) %>% 
+    inner_join(lt_ %>% select(age,life_table = cump)) %>% 
+    gather(method,value,-age)  %>% 
+    ggplot(aes(x = age, y = value)) + geom_line(aes(colour=method)) + 
+    theme_ipsum() + 
+    geom_dl(method = "last.points", aes(label = method, colour = method)) + 
+    scale_x_continuous(expand = c(.25,0), breaks = seq(0,110,10)) + 
+    theme(legend.position="none") + 
+    scale_colour_aaas() + 
+    labs(x = "Age", y = "Percent Living")
+
+sum(gen_wcc(params1$omega+1,params1$cycle_correction)*as.matrix(trace1$natural_history) %*% d_)
+lt_ %>% filter(age==params1$age0) %>% pull(ex)
 ```
 
-```{r}
-trace1 %>% map(~({
-  data.frame(.x) %>% 
-  as_tibble() %>% 
-  mutate(age = params1$ages)
-  })) %>% 
-  bind_rows(.id = "strategy") %>% 
-  gather(state,occpuancy,-age,-strategy) %>% 
-  ggplot() + geom_line(aes(x = age, y = occpuancy, colour = strategy)) +
-  scale_color_aaas() + 
-  facet_wrap(~state,scales="free") +
-  hrbrthemes::theme_ipsum()
-```
 
 ```{r}
 # Life Expectancy (Non-Discounted)
@@ -924,7 +1026,7 @@ YLDt <- trace1 %>% map( ~ ({
     tmp 
 }))
 
-YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
+YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega+1, method = params1$cycle_correction)))
 YLD
 
 # YLL
@@ -941,7 +1043,7 @@ YLLt <-
     new_deaths_from_disease %>% map(~(.x * remaining_life_expectancy ))
 
 YLL <- 
-    YLLt %>% map(~(sum(.x * disc * gen_wcc(params1$omega,method = params1$cycle_correction))))
+    YLLt %>% map(~(sum(.x * disc * gen_wcc(params1$omega+1,method = params1$cycle_correction))))
 
 DALY <- 
     map2(YLL,YLD,~(.x + .y))
@@ -1044,7 +1146,7 @@ params2 <- with(params2,modifyList(params2,list(
 )))
 
 disc = 
-  exp(-params2$r_Delta_t * 0:(params2$omega))
+  exp(-params2$r_Delta_t * 0:(params2$omega+1))
 
 ```
 
@@ -1060,29 +1162,13 @@ trace2 <-
             map(~(data.frame(.x))) %>% 
             bind_rows()
         }))
-    }) 
+    }) %>% 
+    map(~({
+        tmp = .x[1,]
+        tmp[1,] = params$s0T
+        tmp = rbind(tmp,.x)
+    }))
 tr <- trace2$natural_history
-```
-
-```{r}
-# Check Life Expectancy vs. Life Table
-d_ <- c(1,1,0,0)
-sum(gen_wcc(params2$omega,"half-cycle")*as.matrix(tr) %*% d_)
-lt %>% filter(age==params2$age0) %>% pull(ex)
-```
-
-```{r}
-trace2 %>% map(~({
-  data.frame(.x) %>% 
-  as_tibble() %>% 
-  mutate(age = params1$ages)
-  })) %>% 
-  bind_rows(.id = "strategy") %>% 
-  gather(state,occpuancy,-age,-strategy) %>% 
-  ggplot() + geom_line(aes(x = age, y = occpuancy, colour = strategy)) +
-  scale_color_aaas() + 
-  facet_wrap(~state,scales="free") +
-  hrbrthemes::theme_ipsum()
 ```
 
 ```{r}
@@ -1120,7 +1206,7 @@ YLDt <- trace2 %>% map( ~ ({
     tmp 
 }))
 
-YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
+YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega+1, method = params1$cycle_correction)))
 
 
 # # YLL

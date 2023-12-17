@@ -163,7 +163,7 @@ params <- list(
     horizon = 100,  
     r_ann = .03,
     Delta_t = 1,
-    age0 = 20,
+    age0 = 0,
     s0T = c(1,0,0,0,0),
     
     rHS1 = .05,
@@ -307,7 +307,7 @@ trace1$natural_history %>% data.frame() %>% head(n=10) %>% kable(digits=3) %>% k
 ```
 
 ```{r}
-# Life Expectancy
+# Life Expectancy (undiscounted)
 le_ = with(params1,(matrix(c(1,
               1 ,
               1,
@@ -323,9 +323,7 @@ LEt <- trace1 %>% map( ~ ({
     tmp 
 }))
 
-LE = LEt %>% map(~sum(.x* disc * gen_wcc(params1$omega-1, method = params1$cycle_correction)))
-
-
+LE = LEt %>% map(~sum(.x* gen_wcc(params1$omega-1, method = params1$cycle_correction)))
 
 # YLD
 
@@ -444,7 +442,7 @@ params2 <- with(params2,modifyList(params2,list(
 ```
 
 ```{r}
-# Life Expectancy
+# Life Expectancy (Undiscounted)
 le_ = with(params2,(matrix(c(1,
               1 ,
               1,
@@ -469,7 +467,7 @@ LEt2 <-
 
 LE2 <- 
     LEt2 %>% 
-    map(~(.x * disc * gen_wcc(params$omega-1, params2$cycle_correction))) %>% 
+    map(~(.x *  gen_wcc(params$omega-1, params2$cycle_correction))) %>% 
     map(~(sum(.x)))
 
 
@@ -847,9 +845,10 @@ healthy_longevity_yll <- function(params, life_expectancy, disc) {
 
 H = with(params3,matrix(1,nrow=tau, ncol=omega))
 V_LE = with(params3,matrix(1,nrow=tau, ncol = omega))
-V_LE[1,] <- disc
-V_LE[2,] <- disc
-V_LE[3,] <- disc
+# Only include the below if discounting remaining life expectancy
+# V_LE[1,] <- disc
+# V_LE[2,] <- disc
+# V_LE[3,] <- disc
 
 V_YLD = with(params3,matrix(0,nrow=tau, ncol = omega))
 V_YLD[2,] <- disc*with(params3,dwS1 * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t)))
@@ -863,9 +862,6 @@ remaining_life_expectancy <- with(params3,(1/r_ann) * (1 - exp(-r_ann * fExR(age
 YLL3 <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy, disc = disc)
 
 DALY3 <- map2(YLL3,YLD3,~(.x+.y))
-
-
-
 
 result3 <- cbind(LE3 = LE3$natural_history[1], YLD3 = YLD3$natural_history[1], YLL3 = YLL3$natural_history[1],DALY3 = DALY3$natural_history[1]) %>% 
     rbind(cbind(LE3 = LE3$prevention[1], YLD3 = YLD3$prevention[1], YLL3 = YLL3$prevention[1],DALY3 = DALY3$prevention[1])) %>% 
