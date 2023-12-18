@@ -18,8 +18,6 @@ self-contained: true
 image: "media/DALY-image.svg"
 ---
 
-
-
 ```{r setup}
 #| code-fold: true
 #| code-summary: Setup R session
@@ -38,6 +36,11 @@ library(directlabels)
 library(knitr)
 library(kableExtra)
 library(hrbrthemes)
+library(furrr)
+library(tictoc)
+
+rate_to_prob <- function(x) 1-exp(-x)
+prob_to_rate <- function(x) -log(1-x)
 
 options(scipen = 5) 
 select <- dplyr::select
@@ -65,31 +68,6 @@ gen_wcc <- function (n_cycles, method = c("Simpson1/3", "half-cycle", "none"))
     }
     return(v_wcc)
 }
-```
-
-# Introduction
-
-The objective of this blog post is to construct a natural history model of any disease, location, and time period represented in the Global Burden of Disease study. 
-
-```{r}
-#| code-fold: false
-#| echo: true
-life_table_year = 2019 
-location = "United Kingdom"
-cause_id = 491 # CVD
-```
-
-# Step 1. Cause-Deleted Life Tables
-
-## Life Tables
-
-The GBD life table data are arranged by age group, so we need to download a separate file for each group, and extract the relevant location and year. 
-
-```{r}
-#| code-fold: true
-#| code-summary: Download and process GBD life table data. 
-
-radix = 100000
 
 age_group_lut <- c(
     "5" = 1,
@@ -118,8 +96,125 @@ age_group_lut <- c(
     "28" = 0
 )
 
+lut_age_incidence = 
+tibble::tribble(
+  ~age_name, ~age,
+  "<1 year",  0L,
+  "1-4 years",  1L,
+  "5-9 years",  5L,
+  "10-14 years", 10L,
+  "15-19 years", 15L,
+  "20-24 years", 20L,
+  "25-29 years", 25L,
+  "30-34 years", 30L,
+  "35-39 years", 35L,
+  "40-44 years", 40L,
+  "45-49 years", 45L,
+  "50-54 years", 50L,
+  "55-59 years", 55L,
+  "60-64 years", 60L,
+  "65-69 years", 65L,
+  "70-74 years", 70L,
+  "75-79 years", 75L,
+  "80-84", 80L,
+  "85-89", 85L,
+  "90-94", 90L,
+  "95+ years", 95L
+)
+
+```
+
+# Introduction
+
+The objective of this blog post is to construct a natural history model of any disease, location, and time period represented in the Global Burden of Disease study.
+
+```{r}
+#| code-fold: false
+#| echo: true
+life_table_year = 2019 
+location = "United Kingdom"
+cause_id = 491 # CVD
+radix = 100000 
+sex = "Both"
+```
+
+
+# Data Sources
+
+
+| Description                                                                                | Source                                          |
+|----------------------------------|--------------------------------------|
+| [Life Tables](https://ghdx.healthdata.org/record/ihme-data/gbd-2019-life-tables-1950-2019) | @globalburdenofdiseasecollaborativenetwork2020a |
+| [Disease Incidence](https://vizhub.healthdata.org/gbd-results/)                            | @GBD2019                                        |
+| [Disease-Related Death](https://vizhub.healthdata.org/gbd-results/)                        | @GBD2019                                        |
+
+: Data Sources
+
+# Population Data
+
+```{r}
+#| code-fold: true
+#| code-summary: Download and process GBD incidence data
+
+if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_population_{location}-{life_table_year}.rds")))) {
+  gbd_population <- c("https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_POP_2010_2019_SYA.zip")
+  
+  population <-
+      gbd_population %>% map(~ ({
+        cat(glue::glue("File: {.x}\n"))
+        tmp <- tempfile()
+        tmpdir <- tempdir()
+        download.file(.x, tmp)
+        nn <-
+          gsub(
+            "https://ghdx.healthdata.org/sites/default/files/record-attached-files/",
+            "",
+            .x
+          ) %>% gsub(".ZIP|.zip", "", .)
+        unzip(tmp)
+        ff <- list.files(here(), pattern = ".CSV|.csv")
+        df_pop <- 
+          ff[grep(glue("SYA_{life_table_year}"),ff)] %>% 
+          map(~(read.csv(.x) %>% as_tibble() %>% mutate(file = .x))) %>% pluck(1) %>% 
+          filter(location_name == location & sex_name == tolower(sex)) 
+        file.remove(ff)
+        df_pop 
+      })) %>%
+      bind_rows()
+  
+  df_population <- 
+    population  %>% 
+    select(age_group_name,val) %>% 
+    mutate(age_group_name = ifelse(age_group_name=="<1 year","0",age_group_name))  %>% 
+    mutate(age_group_name = ifelse(age_group_name=="95 plus","95",age_group_name))  %>% 
+    mutate(age_name = as.numeric(paste0(age_group_name))) %>% 
+    mutate(age_name = cut(age_name,labels = lut_age_incidence$age_name, right = FALSE,breaks = c(0,1,seq(5,95,5),110))) %>% 
+    group_by(age_name) %>% 
+    summarise(population=sum(val)) %>% 
+    left_join(lut_age_incidence,"age_name")
+  
+  
+  df_population %>% write_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_population_{location}-{life_table_year}.rds")))
+} 
+
+df_population <- read_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_population_{location}-{life_table_year}.rds")))
+```
+
+
+# Cause-Deleted Life Tables
+
+## Life Tables
+
+The GBD life table data are arranged by age group, so we need to download a separate file for each group, and extract the relevant location and year.
+
+```{r}
+#| code-fold: true
+#| code-summary: Download and process GBD life table data. 
+
+
+
 if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))) {
-    cbd_life_tables <- c(
+    gbd_life_tables <- c(
       "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_28_0.zip",
       "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_5_0.zip",
       "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_6_0.zip",
@@ -147,7 +242,7 @@ if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_tab
   )
   
   life_table <-
-    cbd_life_tables %>% map(~ ({
+    gbd_life_tables %>% map(~ ({
       cat(glue::glue("File: {.x}\n"))
       tmp <- tempfile()
       tmpdir <- tempdir()
@@ -224,7 +319,7 @@ if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_tab
 df_life_table = read_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))
 ```
 
-### Life Tables 
+### Life Tables
 
 ```{r}
 lt <- 
@@ -232,23 +327,22 @@ lt <-
     select(location_name,location_id,life_table) %>% 
     unnest(cols = c(life_table))  %>% 
     select(location_name, location_id, age, ex, qx)   %>% 
-    mutate(age_diff = c(1,lead(diff(age)))) %>% 
-    mutate(mx = -log(1 - qx)/age_diff) %>% 
+    mutate(age_diff = c(1,lead(diff(age)))) %>%   # Age difference in age group
+    mutate(mx = -log(1 - qx)/age_diff) %>%  # Mortality rate
     select(location_name, location_id, age, ex, qx, mx)  %>% 
-    mutate(p = 1 - qx) %>%
-    mutate(cump = ifelse(row_number() == 1, 1, lag(cumprod(p)))) %>%
-    mutate(lx = radix * cump) %>%
-    mutate(dx = lx * qx) %>%
+    mutate(p = 1 - qx) %>%  # Survival probability
+    mutate(cump = ifelse(row_number() == 1, 1, lag(cumprod(p)))) %>% # Cumulative survival
+    mutate(lx = radix * cump) %>% # At risk
+    mutate(dx = lx * qx) %>% # Deaths = at risk * probability of death
     as.data.table()
 setkey(lt, age)
 ```
 
 ## GBD Incidence and Cause of Death Data
 
-We'll use the [GBD data tool](https://vizhub.healthdata.org/gbd-results/). Note you need a login to download. 
+We'll use the [GBD data tool](https://vizhub.healthdata.org/gbd-results/). Note you need a login to download.
 
-::: {#fig-elephants layout-ncol=2}
-
+::: {#fig-gbd layout-ncol="2"}
 ![Cause of Death](media/gbd-data-cause-of-death.png){#fig-cod}
 
 ![Age Ranges](media/gbd-data-tool-age-ranges.png){#fig-agerange}
@@ -551,31 +645,7 @@ tibble::tribble(
 
 ```{r}
 # Parameterize
-lut_age_incidence = 
-tibble::tribble(
-  ~age_name, ~age,
-  "<1 year",  0L,
-  "1-4 years",  1L,
-  "5-9 years",  5L,
-  "10-14 years", 10L,
-  "15-19 years", 15L,
-  "20-24 years", 20L,
-  "25-29 years", 25L,
-  "30-34 years", 30L,
-  "35-39 years", 35L,
-  "40-44 years", 40L,
-  "45-49 years", 45L,
-  "50-54 years", 50L,
-  "55-59 years", 55L,
-  "60-64 years", 60L,
-  "65-69 years", 65L,
-  "70-74 years", 70L,
-  "75-79 years", 75L,
-  "80-84", 80L,
-  "85-89", 85L,
-  "90-94", 90L,
-  "95+ years", 95L
-)
+
 
 params <- list(
     # Treatment Strategies
@@ -650,12 +720,17 @@ params <-
             fExR = function(x) pmax(0,unname(Hmisc::approxExtrap(ExR$Age, ExR$Life.Expectancy,xout = x)$y))
         ))
     })
+# 
+# First cycle will be 1,0,0,0 so need to slice off one age for 
+# construction of transition matrices, but leave one
+# for the trace
+params$ages_trace <- params$ages
+params$ages <- params$ages[-length(params$ages)]
 ```
 
 ## Define Functions for Time Inhomogeneous Parameters
 
-
-### Disease Incidence 
+### Disease Incidence
 
 ```{r}
 #| code-fold: true
@@ -665,17 +740,20 @@ rH_CVD <- function(aa,gg = "Both") {
   df_gbd %>% 
     filter(measure_name == "Incidence" & sex_name==gg & metric_name=="Rate") %>% 
     inner_join(lut_age_incidence,"age_name") %>% 
-    select(age, cvd_incidence = val, upper_cvd_incidence = upper, lower_cvd_incidence = lower) %>% 
+    select(age, cvd_incidence = val) %>% 
     arrange(age) %>% 
     mutate(age_diff = c(1,lead(diff(age)))) %>% 
     mutate(age_diff = ifelse(age==95,5,age_diff)) %>% 
-    mutate_at(vars(contains("incidence")),function(x) x/.$age_diff) %>% 
+    mutate_at(vars(contains("incidence")),function(x) x) %>% 
     as.data.table() %>% 
+    left_join(df_population,"age") %>% 
+    mutate(cvd_incidencepop = cvd_incidence * population / 100000) %>% 
+    mutate(cvd_incidencepop = cvd_incidencepop/population) %>% 
     setkey(.,age) %>% 
     {.[data.table(age=aa) %>% setkey(.,age),roll="nearest"]} %>% 
-    pull(cvd_incidence) %>% 
-    {./100000}
+    pull(cvd_incidencepop) 
 }
+
 
 ```
 
@@ -745,75 +823,82 @@ rD <- function(aa, gg = "Both") {
   setkey(lt, age)
   
   pct_cvd <-
-    df_gbd %>%
-    filter(measure_name == "Deaths" & sex_name == gg & metric_name=="Percent") %>%
-    inner_join(lut_age_incidence, "age_name") %>%
-    select(
-      age,
-      pct_cvd = val,
-      upper_pct_cvd = upper,
-      lower_pct_cvd = lower
-    ) %>%
-    as.data.table() %>% 
-    arrange(age)
+      df_gbd %>%
+      filter(measure_name == "Deaths" & sex_name == gg & metric_name=="Percent") %>%
+      inner_join(lut_age_incidence, "age_name") %>%
+      select(
+          age,
+          pct_cvd = val,
+          upper_pct_cvd = upper,
+          lower_pct_cvd = lower
+      ) %>%
+      as.data.table() %>% 
+      arrange(age)
   setkey(pct_cvd, age)
   
-  lt_cvd <-
-    pct_cvd[lt, roll = "nearest"] %>%
-    as_tibble() %>%
-    mutate(dx_cvd = lx * qx * pct_cvd) %>%
-    mutate(dx_nocvd  = dx - dx_cvd,
-           R_nocvd = (dx - dx_cvd) / dx) %>%
-    mutate(mx_nocvd = R_nocvd * mx,
-           mx_cvd = mx - mx_nocvd) %>%
-    na.omit() 
-  
+  lt_cvd_ <-
+      pct_cvd[lt, roll = "nearest"] %>%
+      as_tibble() 
+  lt_cvd <- 
+      lt_cvd_ %>% 
+      #mutate(pct_cvd = 0) %>% 
+      mutate(dx_cvd = lx * qx * pct_cvd) %>%
+      mutate(dx_nocvd  = dx - dx_cvd,
+             R_nocvd = (dx - dx_cvd) / dx) %>%
+      mutate(mx_nocvd = R_nocvd * mx,
+             mx_cvd = mx - mx_nocvd) %>%
+      na.omit() 
+
   r <-
     lt_cvd %>%
     as.data.table() %>%
     setkey(., age) %>%
     {
-      .[data.table(age = aa) %>% setkey(., age), roll = "nearest"]
+        .[data.table(age = aa) %>% setkey(., age), roll = "nearest"]
     } %>%
     pull(mx_nocvd)
+
   return(r)
 }
 
 rCVD_D <- function(aa, gg = "Both") {
-  setkey(lt, age)
+setkey(lt, age)
   
   pct_cvd <-
-    df_gbd %>%
-    filter(measure_name == "Deaths" & sex_name == gg & metric_name=="Percent") %>%
-    inner_join(lut_age_incidence, "age_name") %>%
-    select(
-      age,
-      pct_cvd = val,
-      upper_pct_cvd = upper,
-      lower_pct_cvd = lower
-    ) %>%
-    as.data.table() %>% 
+      df_gbd %>%
+      filter(measure_name == "Deaths" & sex_name == gg & metric_name=="Percent") %>%
+      inner_join(lut_age_incidence, "age_name") %>%
+      select(
+          age,
+          pct_cvd = val,
+          upper_pct_cvd = upper,
+          lower_pct_cvd = lower
+      ) %>%
+      as.data.table() %>% 
       arrange(age)
   setkey(pct_cvd, age)
   
-  lt_cvd <-
-    pct_cvd[lt, roll = "nearest"] %>%
-    as_tibble() %>%
-    mutate(dx_cvd = lx * qx * pct_cvd) %>%
-    mutate(dx_nocvd  = dx - dx_cvd,
-           R_nocvd = (dx - dx_cvd) / dx) %>%
-    mutate(mx_nocvd = R_nocvd * mx,
-           mx_cvd = mx - mx_nocvd) %>%
-    na.omit()
+  lt_cvd_ <-
+      pct_cvd[lt, roll = "nearest"] %>%
+      as_tibble() 
+  lt_cvd <- 
+      lt_cvd_ %>% 
+      mutate(dx_cvd = lx * qx * pct_cvd) %>%
+      mutate(dx_nocvd  = dx - dx_cvd,
+             R_nocvd = (dx - dx_cvd) / dx) %>%
+      mutate(mx_nocvd = R_nocvd * mx,
+             mx_cvd = mx - mx_nocvd) %>%
+      na.omit() 
 
   r <-
     lt_cvd %>%
     as.data.table() %>%
     setkey(., age) %>%
     {
-      .[data.table(age = aa) %>% setkey(., age), roll = "nearest"]
+        .[data.table(age = aa) %>% setkey(., age), roll = "nearest"]
     } %>%
     pull(mx_cvd)
+
   return(r)
   
 }
@@ -838,17 +923,18 @@ rCVD_D_p = function(aa,params) {
         HP2(aa,coef_)$hx   
     })
 }
-
-
 ```
 
 # Approach 1: Markov Trace
 
 ```{r}
+#| cache: false
+#| 
+plan(multisession)
 params1 <- with(params,modifyList(params,list(
     # Natural History Transition Rate Matrix
     mR = 
-      ages %>% map(~({
+      ages %>% future_map(~({
         mR_nh = 
           matrix(c(
           -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
@@ -929,8 +1015,7 @@ params1 <- with(params1,modifyList(params1,list(
 )))
 
 disc = 
-  exp(-params1$r_Delta_t * 0:(params1$omega+1))
-
+  exp(-params1$r_Delta_t * 0:(params1$omega))
 ```
 
 ```{r}
@@ -951,11 +1036,14 @@ trace1 <-
         tmp[1,] = params$s0T
         tmp = rbind(tmp,.x)
     }))
-tr <- trace1$natural_history[-nrow(trace1$natural_history),]
+tr <- trace1$natural_history
 ```
 
+## Checkpoint 1: Overall Survival
 
 ```{r}
+#| fig-cap: Survival Curve
+#| 
 # Check Life Expectancy vs. Life Table
 lt_ <- df_life_table %>% 
     select(location_name,location_id,life_table) %>% 
@@ -975,7 +1063,7 @@ d_ <- c(1,1,0,0)
 as.matrix(tr) %*% d_ %>% data.frame() %>% 
     as_tibble() %>% 
     set_names(c('model')) %>% 
-    mutate(age = params$ages) %>% 
+    mutate(age = params$ages_trace) %>% 
     inner_join(lt_ %>% select(age,life_table = cump)) %>% 
     gather(method,value,-age)  %>% 
     ggplot(aes(x = age, y = value)) + geom_line(aes(colour=method)) + 
@@ -986,8 +1074,83 @@ as.matrix(tr) %*% d_ %>% data.frame() %>%
     scale_colour_aaas() + 
     labs(x = "Age", y = "Percent Living")
 
-sum(gen_wcc(params1$omega+1,params1$cycle_correction)*as.matrix(trace1$natural_history) %*% d_)
-lt_ %>% filter(age==params1$age0) %>% pull(ex)
+```
+
+## Checkpoint: Percentage of Deaths
+
+```{r}
+tr %>% 
+  as_tibble() %>% 
+  mutate(age = params$ages_trace) %>% 
+  filter(age %in% lut_age_incidence$age) %>% 
+  mutate(OC_ = c(0,diff(DeathOC)),
+         CVD_ = c(0,diff(DeathCVD))) %>% 
+  mutate(pct_model = CVD_/(CVD_+OC_)) %>% 
+  select(age,DeathOC,DeathCVD,CVD_, OC_,pct_model) %>% 
+  left_join(
+    df_gbd %>% 
+    filter(measure_name == "Deaths" & sex_name=="Both" & metric_name=="Percent") %>% 
+    inner_join(lut_age_incidence,"age_name") %>% 
+    select(age, pct_gbd = val), "age"
+  ) %>% 
+  data.frame() %>% 
+  select(age,pct_model,pct_gbd) %>% 
+  gather(method,value,-age) %>% 
+  ggplot(aes(x = age, y = value, colour = method)) + geom_point() +  geom_line() +
+  geom_dl(method=list("last.points"),aes(label = method)) +
+  theme_ipsum() + 
+  scale_colour_aaas() + 
+  scale_x_comma(expand = c(0.25,0))
+  
+```
+
+
+## Checkpoint: CVD Prevalence
+
+```{r}
+df_prevalence <- 
+  tibble::tribble(
+      ~measure_id, ~measure_name, ~location_id,   ~location_name, ~sex_id, ~sex_name, ~age_id,     ~age_name, ~cause_id,               ~cause_name, ~metric_id, ~metric_name, ~year,        ~val,      ~upper,      ~lower,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",      5L,   "1-4 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,   0.0000878, 0.000129159,   0.0000585,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",      6L,   "5-9 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.001149058, 0.001697486, 0.000762774,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",      7L, "10-14 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.002124186, 0.003148646, 0.001371886,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",      8L, "15-19 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.004583822, 0.006644945, 0.003073985,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",      9L, "20-24 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.005942458, 0.008226115, 0.004300527,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     10L, "25-29 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.00996704, 0.013682815, 0.007414362,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     11L, "30-34 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.011397874, 0.014942621, 0.009118873,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     12L, "35-39 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.014296479, 0.016443542,  0.01252059,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     13L, "40-44 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.037308496, 0.045780893, 0.031435951,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     14L, "45-49 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.051644521, 0.057469379, 0.046823625,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     15L, "50-54 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.078084533, 0.086939447, 0.070462836,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     16L, "55-59 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.120485163, 0.132099872, 0.109649198,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     17L, "60-64 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L,  0.17921163,  0.19685285,  0.16262344,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     18L, "65-69 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.256318787, 0.277513117, 0.236628128,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     19L, "70-74 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.334571503, 0.360158788, 0.307798254,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     20L, "75-79 years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.402821035, 0.432475543, 0.373508479,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     28L,     "<1 year",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.000000668,  0.00000144, 0.000000237,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     30L,       "80-84",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.452174474, 0.483670261, 0.419854319,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     31L,       "85-89",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.472928576, 0.506979294, 0.441347641,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",     32L,       "90-94",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.470160144, 0.508229264, 0.437316163,
+               5L,  "Prevalence",          95L, "United Kingdom",      3L,    "Both",    235L,   "95+ years",      491L, "Cardiovascular diseases",         2L,    "Percent", 2019L, 0.448909821, 0.488972286, 0.413508609
+      ) %>% 
+  inner_join(lut_age_incidence,"age_name") %>% 
+  select(age,val)
+
+as.matrix(tr) %>% 
+  as_tibble() %>% 
+  mutate(age = params$ages_trace) %>% 
+  filter(age %in% lut_age_incidence$age)  %>% 
+  mutate(prev_model = CVD / (CVD + Healthy)) %>% 
+  select(age,prev_model) %>% 
+  data.frame() %>% 
+  left_join(df_prevalence %>% rename(prev_gbd = val),"age") %>% 
+  gather(method,value,-age) %>% 
+  ggplot(aes(x = age, y = value, colour = method)) + geom_point() +  geom_line() +
+  geom_dl(method=list("last.points"),aes(label = method)) +
+  theme_ipsum() + 
+  scale_colour_aaas() + 
+  scale_x_comma(expand = c(0.25,0))
+
 ```
 
 
@@ -1026,7 +1189,7 @@ YLDt <- trace1 %>% map( ~ ({
     tmp 
 }))
 
-YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega+1, method = params1$cycle_correction)))
+YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
 YLD
 
 # YLL
@@ -1037,13 +1200,13 @@ new_deaths_from_disease <-
     })) 
    
 remaining_life_expectancy <- 
-    with(params1,(1/r_ann) * (1 - exp(-r_ann * fExR(ages))))
+    with(params1,(1/r_ann) * (1 - exp(-r_ann * fExR(ages_trace))))
     
 YLLt <- 
     new_deaths_from_disease %>% map(~(.x * remaining_life_expectancy ))
 
 YLL <- 
-    YLLt %>% map(~(sum(.x * disc * gen_wcc(params1$omega+1,method = params1$cycle_correction))))
+    YLLt %>% map(~(sum(.x * disc * gen_wcc(params1$omega,method = params1$cycle_correction))))
 
 DALY <- 
     map2(YLL,YLD,~(.x + .y))
@@ -1065,7 +1228,8 @@ result1 %>%
 # Approach 2: Transition States
 
 ```{r}
-
+#| cache: true
+#| 
 params2 <- with(params,modifyList(params,list(
     tr_names = c("Healthy","CVD"), # transient health states
     ab_names = c("Death","trDeathCVD"), # absorbing health states
@@ -1246,4 +1410,3 @@ YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega+1, method = params1$cy
 #     pack_rows(index = c("natural_history" = 2, "prevention" = 2, "treatment" = 2)) %>% 
 #     kable_styling()
 ```
-
