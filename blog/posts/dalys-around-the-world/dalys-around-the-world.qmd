@@ -126,7 +126,7 @@ tibble::tribble(
 
 # Introduction
 
-The objective of this blog post is to construct a natural history model of any disease, location, and time period represented in the Global Burden of Disease study.
+Our objective here is to construct a decision model using data and parameters from the 2019 Global Burden of Disease study. 
 
 ```{r}
 #| code-fold: false
@@ -136,6 +136,8 @@ location = "United Kingdom"
 cause_id = 491 # CVD
 radix = 100000 
 sex = "Both"
+rr_deathCVD = 1.1
+rr_incidence = 0.75
 ```
 
 
@@ -646,7 +648,6 @@ tibble::tribble(
 ```{r}
 # Parameterize
 
-
 params <- list(
     # Treatment Strategies
     tx_names = c("natural_history","prevent","treat","prevent_treat"),      # treatment names
@@ -662,7 +663,7 @@ params <- list(
     horizon = 120,  
     r_ann = 1e-6,
     Delta_t = 1,
-    age0 = 0,
+    age0 = 50,
     s0T = c(1,0,0,0),
     
     uCVD = 0.773,
@@ -720,6 +721,9 @@ params <-
             fExR = function(x) pmax(0,unname(Hmisc::approxExtrap(ExR$Age, ExR$Life.Expectancy,xout = x)$y))
         ))
     })
+
+
+
 # 
 # First cycle will be 1,0,0,0 so need to slice off one age for 
 # construction of transition matrices, but leave one
@@ -736,6 +740,7 @@ params$ages <- params$ages[-length(params$ages)]
 #| code-fold: true
 #| code-summary: Age-dependent incidence rate function
 
+
 rH_CVD <- function(aa,gg = "Both") {
   df_gbd %>% 
     filter(measure_name == "Incidence" & sex_name==gg & metric_name=="Rate") %>% 
@@ -751,9 +756,9 @@ rH_CVD <- function(aa,gg = "Both") {
     mutate(cvd_incidencepop = cvd_incidencepop/population) %>% 
     setkey(.,age) %>% 
     {.[data.table(age=aa) %>% setkey(.,age),roll="nearest"]} %>% 
-    pull(cvd_incidencepop) 
+    pull(cvd_incidencepop) %>% 
+    {. * rr_incidence}
 }
-
 
 ```
 
@@ -813,6 +818,10 @@ params <- modifyList(params,{
     )
 })
 
+
+disc = 
+  exp(-params$r_Delta_t * 0:(params$omega))
+
 ```
 
 ```{r}
@@ -833,7 +842,8 @@ rD <- function(aa, gg = "Both") {
           lower_pct_cvd = lower
       ) %>%
       as.data.table() %>% 
-      arrange(age)
+      arrange(age) %>% 
+    mutate(pct_cvd = rr_deathCVD * pct_cvd)
   setkey(pct_cvd, age)
   
   lt_cvd_ <-
@@ -875,7 +885,8 @@ setkey(lt, age)
           lower_pct_cvd = lower
       ) %>%
       as.data.table() %>% 
-      arrange(age)
+      arrange(age) %>% 
+      mutate(pct_cvd = rr_deathCVD * pct_cvd)
   setkey(pct_cvd, age)
   
   lt_cvd_ <-
@@ -928,13 +939,13 @@ rCVD_D_p = function(aa,params) {
 # Approach 1: Markov Trace
 
 ```{r}
-#| cache: false
+#| cache: true
 #| 
-plan(multisession)
+
 params1 <- with(params,modifyList(params,list(
     # Natural History Transition Rate Matrix
     mR = 
-      ages %>% future_map(~({
+      ages %>% map(~({
         mR_nh = 
           matrix(c(
           -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
@@ -1014,8 +1025,6 @@ params1 <- with(params1,modifyList(params1,list(
       })) 
 )))
 
-disc = 
-  exp(-params1$r_Delta_t * 0:(params1$omega))
 ```
 
 ```{r}
@@ -1068,40 +1077,12 @@ as.matrix(tr) %*% d_ %>% data.frame() %>%
     gather(method,value,-age)  %>% 
     ggplot(aes(x = age, y = value)) + geom_line(aes(colour=method)) + 
     theme_ipsum() + 
-    geom_dl(method = "last.points", aes(label = method, colour = method)) + 
+    geom_dl(method = list("last.points","bumpup"), aes(label = method, colour = method)) + 
     scale_x_continuous(expand = c(.25,0), breaks = seq(0,110,10)) + 
     theme(legend.position="none") + 
     scale_colour_aaas() + 
     labs(x = "Age", y = "Percent Living")
 
-```
-
-## Checkpoint: Percentage of Deaths
-
-```{r}
-tr %>% 
-  as_tibble() %>% 
-  mutate(age = params$ages_trace) %>% 
-  filter(age %in% lut_age_incidence$age) %>% 
-  mutate(OC_ = c(0,diff(DeathOC)),
-         CVD_ = c(0,diff(DeathCVD))) %>% 
-  mutate(pct_model = CVD_/(CVD_+OC_)) %>% 
-  select(age,DeathOC,DeathCVD,CVD_, OC_,pct_model) %>% 
-  left_join(
-    df_gbd %>% 
-    filter(measure_name == "Deaths" & sex_name=="Both" & metric_name=="Percent") %>% 
-    inner_join(lut_age_incidence,"age_name") %>% 
-    select(age, pct_gbd = val), "age"
-  ) %>% 
-  data.frame() %>% 
-  select(age,pct_model,pct_gbd) %>% 
-  gather(method,value,-age) %>% 
-  ggplot(aes(x = age, y = value, colour = method)) + geom_point() +  geom_line() +
-  geom_dl(method=list("last.points"),aes(label = method)) +
-  theme_ipsum() + 
-  scale_colour_aaas() + 
-  scale_x_comma(expand = c(0.25,0))
-  
 ```
 
 
@@ -1146,7 +1127,7 @@ as.matrix(tr) %>%
   left_join(df_prevalence %>% rename(prev_gbd = val),"age") %>% 
   gather(method,value,-age) %>% 
   ggplot(aes(x = age, y = value, colour = method)) + geom_point() +  geom_line() +
-  geom_dl(method=list("last.points"),aes(label = method)) +
+  geom_dl(method=list("last.points","bumpup"),aes(label = method)) +
   theme_ipsum() + 
   scale_colour_aaas() + 
   scale_x_comma(expand = c(0.25,0))
@@ -1211,6 +1192,24 @@ YLL <-
 DALY <- 
     map2(YLL,YLD,~(.x + .y))
 
+# QALY-LIKE DALY
+qaly_daly_ = with(params1,(matrix(c(1,
+              1 - (dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t))) ,
+              0,
+              0),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
+
+
+QALY_DALYt <- trace1 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% qaly_daly_
+    tmp 
+}))
+
+QALY_DALY = QALY_DALYt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction))); QALY_DALY
+
 result1 <- cbind(LE, YLD,YLL,DALY) %>% 
     as.data.frame() %>% 
     mutate_all(~as.numeric(.))  %>% 
@@ -1229,7 +1228,6 @@ result1 %>%
 
 ```{r}
 #| cache: true
-#| 
 params2 <- with(params,modifyList(params,list(
     tr_names = c("Healthy","CVD"), # transient health states
     ab_names = c("Death","trDeathCVD"), # absorbing health states
@@ -1309,8 +1307,6 @@ params2 <- with(params2,modifyList(params2,list(
       })) 
 )))
 
-disc = 
-  exp(-params2$r_Delta_t * 0:(params2$omega+1))
 
 ```
 
@@ -1332,7 +1328,6 @@ trace2 <-
         tmp[1,] = params$s0T
         tmp = rbind(tmp,.x)
     }))
-tr <- trace2$natural_history
 ```
 
 ```{r}
@@ -1351,7 +1346,7 @@ LEt <- trace2 %>% map( ~ ({
     tmp 
 }))
 
-LE = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) ; LE
+LE2 = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) ; LE
 
 # YLD
 
@@ -1370,43 +1365,350 @@ YLDt <- trace2 %>% map( ~ ({
     tmp 
 }))
 
-YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega+1, method = params1$cycle_correction)))
+YLD2 = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
+
+# YLL
 
 
-# # YLL
-# 
-# Ex <- matrix(0,ncol= 4, nrow = params2$omega)
-# colnames(Ex) = rownames(params2$mP$natural_history[[1]])
-# rownames(Ex) = params2$ages[-length(params2$ages)]
-# Ex[,"trSickDead"] = with(params,(1/r_ann) * (1 - exp(-r_ann * fExR(ages[-1]))))
-# 
-# YLLt2 = trace2 %>% map(~({
-#     apply(.x * Ex  ,1,sum)
-#     }))
-# 
-# YLL2 = 
-#     YLLt2 %>% 
-#     map(~(.x * disc * gen_wcc(params$omega-1, params2$cycle_correction))) %>% 
-#     map(~(sum(.x)))
-# 
-# DALY2 <- 
-#     map2(YLL2,YLD2,~(.x + .y))
-# 
-# result2 <- cbind(LE2, YLD2,YLL2,DALY2) %>% 
-#     as.data.frame() %>% 
-#     mutate_all(~as.numeric(.))  %>% 
-#     rownames_to_column(var="strategy") %>% 
-#     mutate(approach = "Transition States") %>% 
-#     dplyr::select(approach, strategy, LE = LE2, YLD=YLD2, YLL=YLL2, DALY=DALY2) 
-# 
-# tib <- result1 %>% 
-#     bind_rows(result2) 
-# 
-# tib %>% 
-#     arrange(strategy) %>% 
-#     select(-strategy) %>% 
-#     kable(digits = 3, col.names = c("Approach","Life Expectancy","YLDs","YLLs","DALYs"),) %>% 
-#     kable_styling() %>% 
-#     pack_rows(index = c("natural_history" = 2, "prevention" = 2, "treatment" = 2)) %>% 
-#     kable_styling()
+Ex <- matrix(0,ncol= 4, nrow = params2$omega+1)
+Ex[,4] =  with(params1,(1/r_ann) * (1 - exp(-r_ann * fExR(ages_trace))))
+
+YLLt <- 
+    trace2 %>% map(~({
+      .x * Ex
+    }))
+
+YLL2 <- 
+    YLLt %>% map(~(sum(.x * disc * gen_wcc(params1$omega,method = params1$cycle_correction))))
+
+DALY2 <- 
+    map2(YLL2,YLD,~(.x + .y))
+
+
+
+result2 <- cbind(LE2, YLD2,YLL2,DALY2) %>%
+    as.data.frame() %>%
+    mutate_all(~as.numeric(.))  %>%
+    rownames_to_column(var="strategy") %>%
+    mutate(approach = "Transition States") %>%
+    dplyr::select(approach, strategy, LE = LE2, YLD=YLD2, YLL=YLL2, DALY=DALY2)
+
+tib <- result1 %>%
+    bind_rows(result2)
+
+tib %>%
+    arrange(strategy) %>%
+    select(-strategy) %>%
+    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
+    kable_styling() %>% 
+    pack_rows(index = c("natural_history" = 2, "prevention" = 2, "treatment" = 2,"prevent_treat" = 2)) %>%
+    kable_styling()
 ```
+
+
+# Approach 3: Markov Chain with Rewards
+
+```{r}
+vec <-  # a simple function to return the vec of an array
+    function(x) {
+        y <- c(x)
+        return(y)
+    }
+
+vecperm <- 
+    # vecperm
+    # function to calculate the vec permutation matrix K of index m,n
+    # let X be a m x n matrix, and X' the transpose of X
+    # then K satisfies 
+    # vec(X') = K*vec(X)
+    function(m, n) {
+        K <- matrix(0, m * n, m * n)
+        a <- matrix(0, m, n)
+        
+        for (i in 1:m) {
+            for (j in 1:n) {
+                e <- a
+                e[i, j] <- 1
+                K <- K + kronecker(e, t(e))
+            }
+        }
+        
+        return(K)
+    }
+
+params3_ <- with(params,modifyList(params,list(
+    alpha = length(ab_names),
+    tau = length(tr_names), 
+    s = length(tr_names)*omega + length(ab_names), #total number of states;s=τω+α
+    # Age transition Matrix
+    D = {
+        # Create diagonal age advancement matrix
+        D <- matrix(0, omega, omega)
+        vec <- rep(1, omega-1)
+        D[row(D)-1 == col(D)] <- vec
+        D[omega,omega] = 1
+        D
+    }
+)))
+```
+
+```{r}
+#| cache: false
+
+params3_ <- with(params3_,modifyList(params3_,list(
+    # Natural History Transition Rate Matrix
+    mR = 
+      ages %>% map(~({
+        mR_nh = 
+          matrix(c(
+          -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ rCVD_D(.x)), rD(.x),rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+
+        mR_prevent = 
+          matrix(c(
+          -(hr_prevent * rH_CVD(.x) + rD(.x)), hr_prevent * rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ rCVD_D(.x)), rD(.x),rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          )) 
+        
+        mR_treat = 
+          matrix(c(
+          -(rH_CVD(.x) + rD(.x)), rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ hr_treat * rCVD_D(.x)), rD(.x),hr_treat * rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+        
+        mR_prevent_treat = 
+          matrix(c(
+          -(hr_prevent * rH_CVD(.x) + rD(.x)), hr_prevent * rH_CVD(.x), rD(.x), 0 ,
+          0, -(rD(.x)+ hr_treat * rCVD_D(.x)), rD(.x),hr_treat * rCVD_D(.x),
+          0,0,0,0,
+          0,0,0,0),
+          nrow = 4, 
+          ncol = 4,
+          byrow=TRUE, 
+          dimnames = list(c(tr_names,ab_names),
+                          c(tr_names,ab_names)
+          ))
+        array(c(as.vector(mR_nh),as.vector(mR_prevent), as.vector(mR_treat),as.vector(mR_prevent_treat)), dim = c(length(tr_names)+ length(ab_names),length(tr_names)+ length(ab_names),length(tx_names)),
+          dimnames = list(c(tr_names,ab_names),c(tr_names,ab_names),tx_names)) %>% 
+            apply(.,3,function(x) t(x), simplify=FALSE) 
+      }))   
+)))
+
+# not sure why this is needed, but otherwise the length gets set too long...
+  params3 <- with(params3_,modifyList(params3_,list(
+      mR_ = mR %>% transpose() 
+  )))
+  params3$mR = params3$mR_
+
+params3 <- with(params3,modifyList(params3,list(
+    mV = mR %>% map(~({
+            R = .x
+            R %>% map(~({
+              m <- .x[tr_names,tr_names] 
+            }))
+            
+        })),
+     
+    mQ = mR %>% map(~({
+      R = .x 
+      R %>% map(~({
+                V = .x[tr_names,tr_names]
+                S = .x[ab_names,tr_names]
+                zero_ <- matrix(0, nrow = length(tr_names)+length(ab_names), ncol = length(ab_names))
+                tmp <- cbind(rbind(V,S),zero_)
+                dimnames(tmp) <- list(c(tr_names,ab_names),c(tr_names,ab_names))
+                tmp
+      }))
+    }))    
+)))
+
+params3 <- with(params3,modifyList(params3,list(
+    mP = mQ %>% map(~({
+          Q = .x
+          Q %>% map(~(expm(.x * Delta_t)))
+    }))
+)))
+
+params3 <- with(params3,modifyList(params3,list(
+    mU = mP %>% map(~({
+          P <- .x 
+          P %>% map(~(.x[tr_names,tr_names]))
+    })),
+    mM = mP %>% map(~({
+        P = .x
+        P %>% map(~(.x[ab_names,tr_names]))
+        
+    })),
+    bbD_ = kronecker(diag(tau), D)
+)))
+
+params3 <- with(params3,modifyList(params3,list(
+    bbU_ =  mU %>% 
+            map(~(bdiag(.x))),
+    K = vecperm(tau, omega)
+)))
+
+params3 <- with(params3,modifyList(params3,list(
+    mUtilde = bbU_ %>% map( ~ ({
+        t(K) %*% bbD_ %*% K %*% .x
+    }))
+)))
+
+params3 <- with(params3,modifyList(params3,list(
+    mMtilde = mM %>% map(~({
+      do.call(cbind,.x) 
+    }))  
+)))
+
+params3 <- with(params3,modifyList(params3,list(
+    mPtilde =  map2(mUtilde, mMtilde,  ~ ({
+            rbind(cbind(.x, matrix(0, tau * omega, alpha)) ,
+                  cbind(.y, diag(alpha)))
+        }))
+)))
+```
+
+
+```{r}
+healthy_longevity_occupancy <- function(params, H, V) {
+    with(params,{
+        map2(mUtilde,mPtilde,~({
+            U = .x
+            P = .y
+            N = solve(diag(tau*omega)-U)
+            h = vec(H) %>% as.matrix()
+            not_h = 1-h
+            v <- vec(V) %>% as.matrix()
+            B1 <- h %*% t(v) + 0.5 * (not_h %*% t(v)) + 0.5 * (v %*% t(not_h)) # Eq. 46
+            C1 = 0.5 * (rep(1,alpha) %*%  t(v)) # Eq. 48
+            R1 = rbind(cbind(B1, matrix(0, tau * omega, alpha)) ,
+                              cbind(C1, diag(alpha))) 
+            R2 = R1 * R1
+            R3 = R1 * R1 * R1
+            Z = cbind(diag(tau*omega),matrix(0,nrow=tau*omega, ncol=alpha))
+            e = rep(1,s)
+            rho1_ <- t(N)%*% Z %*% t(P * R1) %*% e
+            # The following needs to be debugged
+            # rho2_ <-
+            #   N %*% (Z %*% t(.y * R1) %*% e + 2 * t(.x * B1) %*% rho1_)
+            # B2 <- R2[1:(tau * omega), 1:(tau * omega)]
+            # rho3_ <- t(N) %*% (Z %*% ((t(.y * R3) %*% e)) + 3 * (t(.x * B2) %*% rho1_) + 3 * (t(.x * B1) %*% rho2_))
+            rho1_
+        }))
+    })
+}
+
+healthy_longevity_yll <- function(params, life_expectancy, disc) {
+    with(params,{
+        map2(mUtilde,mPtilde,~({
+            U = .x
+            P = .y
+            N = solve(diag(tau*omega)-U)
+            Z = cbind(diag(tau*omega),matrix(0,nrow=tau*omega, ncol=alpha))
+            disc_ = rev(sort(rep(disc,length(tr_names))))
+            eta1_ex_ = rev(sort(rep(life_expectancy,length(tr_names))))
+            eta1_ex =  eta1_ex_
+            
+            B1 = matrix(0,nrow=tau*omega, ncol = tau*omega)
+            C1 = rbind(matrix(0,nrow=1,ncol=tau*omega),eta1_ex*disc_) 
+            R1 = cbind(rbind(B1,C1),matrix(0,nrow=tau*omega+2,ncol=2))
+            R2 = R1 * R1
+            R3 = R1 * R1 * R1
+            Z = cbind(diag(tau*omega),matrix(0,nrow=tau*omega, ncol=alpha))
+            e = rep(1,s)
+            rho1_ = t(N) %*% Z %*% t(.y * R1) %*% e
+            # The following needs to be debugged
+            # rho2_ <-
+            #   N %*% (Z %*% t(.y * R1) %*% e + 2 * t(.x * B1) %*% rho1_)
+            # B2 <- R2[1:(tau * omega), 1:(tau * omega)]
+            # rho3_ <- t(N) %*% (Z %*% ((t(.y * R3) %*% e)) + 3 * (t(.x * B2) %*% rho1_) + 3 * (t(.x * B1) %*% rho2_))
+            rho1_
+        }))
+    })
+}
+
+# Life Expectancy 
+
+H = with(params3,matrix(1,nrow=tau, ncol=omega))
+V_LE = with(params3,matrix(1,nrow=tau, ncol = omega))
+# Only include the below if discounting remaining life expectancy
+# V_LE[1,] <- disc
+# V_LE[2,] <- disc
+# V_LE[3,] <- disc
+
+V_YLD = with(params3,matrix(0,nrow=tau, ncol = omega))
+V_YLD[2,] <- disc[-length(disc)]*with(params3,dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t)))
+
+LE3 <- params3 %>% healthy_longevity_occupancy(H = H, V = V_LE)
+YLD3 <- params3 %>% healthy_longevity_occupancy(H = H, V = V_YLD)
+
+remaining_life_expectancy <- with(params3,(1/r_ann) * (1 - exp(-r_ann * fExR(ages))))
+
+YLL3 <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy, disc = disc[-length(disc)])
+
+DALY3 <- map2(YLL3,YLD3,~(.x+.y))
+
+result3 <- cbind(LE3 = LE3$natural_history[1], YLD3 = YLD3$natural_history[1], YLL3 = YLL3$natural_history[1],DALY3 = DALY3$natural_history[1]) %>% 
+    rbind(cbind(LE3 = LE3$prevent[1], YLD3 = YLD3$prevent[1], YLL3 = YLL3$prevent[1],DALY3 = DALY3$prevent[1])) %>% 
+    rbind(cbind(LE3 = LE3$treat[1], YLD3 = YLD3$treat[1], YLL3 = YLL3$treat[1],DALY3 = DALY3$treat[1])) %>% 
+     rbind(cbind(LE3 = LE3$prevent_treat[1], YLD3 = YLD3$prevent_treat[1], YLL3 = YLL3$prevent_treat[1],DALY3 = DALY3$prevent_treat[1]))    %>% 
+    as.data.frame() %>% 
+    mutate_all(~as.numeric(.))  %>% 
+    mutate(strategy = c("natural_history","prevent","treat","prevent_treat")) %>% 
+    mutate(approach = "Healthy Longevity") %>% 
+    dplyr::select(approach, strategy, LE = LE3, YLD=YLD3, YLL=YLL3, DALY=DALY3) 
+
+
+tib <- result1 %>%
+    bind_rows(result2) %>% 
+    bind_rows(result3)
+
+tib %>%
+    arrange(strategy) %>%
+    select(-strategy) %>%
+    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
+    kable_styling() %>% 
+    pack_rows(index = c("natural_history" = 3, "prevention" = 3, "treatment" = 3,"prevent_treat" = 3)) %>%
+    kable_styling()
+
+```
+
+
+```{r}
+tib %>% 
+    gather(outcome,value,-approach,-strategy) %>% 
+    unite(outcome,outcome,strategy) %>% 
+    spread(outcome,value) %>% 
+    select(approach,starts_with("DALY")) %>% 
+    mutate(DALY_prevent = DALY_prevent - DALY_natural_history,
+           DALY_treat = DALY_treat - DALY_natural_history,
+           DALY_prevent_treat = DALY_prevent_treat - DALY_natural_history) %>% 
+    select(approach, DALY_natural_history, DALY_prevent, DALY_treat, DALY_prevent_treat) %>% 
+    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Healthy Longevity"))) %>% 
+    arrange(approach) %>% 
+    kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment","incDALY Prevention and Treatment")) %>% 
+    kable_styling()
+```
+
