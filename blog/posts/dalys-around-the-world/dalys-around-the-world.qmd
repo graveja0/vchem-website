@@ -128,14 +128,13 @@ tibble::tribble(
 
 # Introduction
 
-Our objective is to construct a decision model using data and parameters from the [2019 Global Burden of Disease study](https://www.healthdata.org/research-analysis/gbd). 
+Our objective is to construct a decision model using data and parameters from the [2019 Global Burden of Disease study](https://www.healthdata.org/research-analysis/gbd).
 
-We will consider three methods for calculation of outcomes.:
+We will consider three methods:
 
-1. A **Markov Trace-Based** approach that separately tracks deaths from disease and from other non-disease-related causes, and uses differences in disease-related deaths across cycles to calculate years of life lost to disease (YLLs).
-2. A **Transition States** approach that is similar to Markov trace approach, but that draws on a death tracking state to calculate YLLs.
-3. A **Markov Chain with Rewards** approach to Healthy Longevity as developed in @caswell2018 and @caswell2021. 
-
+1.  A **Markov Trace-Based** approach that separately tracks deaths from disease and from other non-disease-related causes, and uses differences in disease-related deaths across cycles to calculate years of life lost to disease (YLLs).
+2.  A **Transition States** approach that is similar to Markov trace approach, but that draws on a death tracking state to calculate YLLs.
+3.  A **Markov Chain with Rewards** approach to Healthy Longevity as developed in @caswell2018 and @caswell2021.
 
 ```{r state-diagrams}
 #| echo: false
@@ -190,14 +189,15 @@ radix = 100000
 
 # Data Sources
 
-
-| Description                                                                                | Source                                          |
+| Description                                                                                                                         | Source                                          |
 |----------------------------------|--------------------------------------|
-| [Life Tables](https://ghdx.healthdata.org/record/ihme-data/gbd-2019-life-tables-1950-2019) | @globalburdenofdiseasecollaborativenetwork2020a |
-| [Disease Incidence](https://vizhub.healthdata.org/gbd-results/)                            | @GBD2019                                        |
-| [Disease-Related Death](https://vizhub.healthdata.org/gbd-results/)                        | @GBD2019                                        |
+| [Life Tables](https://ghdx.healthdata.org/record/ihme-data/gbd-2019-life-tables-1950-2019)                                          | @globalburdenofdiseasecollaborativenetwork2020a |
+| [Disease Incidence](https://vizhub.healthdata.org/gbd-results/)                                                                     | @GBD2019                                        |
+| [Disease-Related Death](https://vizhub.healthdata.org/gbd-results/)                                                                 | @GBD2019                                        |
+| [Disease Prevalence by Age](https://vizhub.healthdata.org/gbd-results/)                                                             | @GBD2019                                        |
+| [Reference Life Table](https://ghdx.healthdata.org/record/ihme-data/global-burden-disease-study-2019-gbd-2019-reference-life-table) | @globalburdenofdiseasecollaborativenetwork2021  |
 
-: Data Sources
+: Data Sources and Citatations
 
 # Population Data
 
@@ -248,7 +248,6 @@ if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_populati
 
 df_population <- read_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_population_{location}-{life_table_year}.rds")))
 ```
-
 
 # Cause-Deleted Life Tables
 
@@ -1259,10 +1258,10 @@ DALY <-
     map2(YLL,YLD,~(.x + .y))
 
 # QALY-LIKE DALY
-qaly_daly_ = with(params1,(matrix(c(1,
-              1 - (dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t))) ,
+qaly_daly_ = with(params1,(matrix(c(0,
+               (dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t))) ,
               0,
-              0),
+              1),
             dimnames = list(c(
                 c(tr_names,ab_names)
             ), c("DW")))
@@ -1276,17 +1275,17 @@ QALY_DALYt <- trace1 %>% map( ~ ({
 
 QALY_DALY = QALY_DALYt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
 
-result1 <- cbind(LE, YLD,YLL,DALY) %>% 
-    as.data.frame() %>% 
-    mutate_all(~as.numeric(.))  %>% 
-    rownames_to_column(var="strategy") %>% 
-    mutate(approach = "Markov Trace") %>% 
-   mutate(LE_LT = lt %>% filter(age==params1$age0) %>% pull(ex)) %>% 
-  mutate(LE_LT = ifelse(strategy !="natural_history",NA,LE_LT)) %>% 
-    dplyr::select(approach, strategy, LE_LT, LE, YLD, YLL, DALY) 
+result1 <- cbind(LE, YLD, YLL, DALY, QALY_DALY) %>%
+  as.data.frame() %>%
+  mutate_all( ~ as.numeric(.))  %>%
+  rownames_to_column(var = "strategy") %>%
+  mutate(approach = "Markov Trace") %>%
+  mutate(LE_LT = lt %>% filter(age == params1$age0) %>% pull(ex)) %>%
+  mutate(LE_LT = ifelse(strategy != "natural_history", NA, LE_LT)) %>%
+  dplyr::select(approach, strategy, LE_LT, LE, YLD, YLL, DALY, QALY_DALY) 
 
 result1 %>% 
-    kable(digits = 3, col.names = c("Approach","Scenario","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
+    kable(digits = 3, col.names = c("Approach","Scenario","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs","QALY-like DALY")) %>% 
     kable_styling()
 ```
 
@@ -1440,7 +1439,6 @@ QALYt <- trace2 %>% map( ~ ({
 
 QALY2 = QALYt %>% map(~sum(.x * disc * gen_wcc(params1$omega, method = params1$cycle_correction))) 
 
-
 # YLD
 
 yld_ = with(params2,(matrix(c(0,
@@ -1475,14 +1473,31 @@ YLL2 <-
 DALY2 <- 
     map2(YLL2,YLD,~(.x + .y))
 
+# QALY-LIKE DALY
+qaly_daly_ = with(params1,(matrix(c(0,
+               (dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t))) ,
+              0,
+              1),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
 
 
-result2 <- cbind(LE2, YLD2,YLL2,DALY2) %>%
+QALY_DALYt2 <- trace1 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% qaly_daly_
+    tmp 
+}))
+
+QALY_DALY2 = QALY_DALYt2 %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
+
+
+result2 <- cbind(LE2, YLD2,YLL2,DALY2,QALY_DALY2) %>%
     as.data.frame() %>%
     mutate_all(~as.numeric(.))  %>%
     rownames_to_column(var="strategy") %>%
     mutate(approach = "Transition States") %>%
-    dplyr::select(approach, strategy, LE = LE2, YLD=YLD2, YLL=YLL2, DALY=DALY2)
+    dplyr::select(approach, strategy, LE = LE2, YLD=YLD2, YLL=YLL2, DALY=DALY2,QALY_DALY=QALY_DALY2)
 
 tib <- result1 %>%
     bind_rows(result2)
@@ -1490,7 +1505,7 @@ tib <- result1 %>%
 tib %>%
     arrange(strategy) %>%
     select(-strategy) %>%
-    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
+    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs","DALY-like QALY")) %>% 
     kable_styling() %>% 
     pack_rows(index = c("natural_history" = 2, "prevention" = 2, "treatment" = 2,"prevent_treat" = 2)) %>%
     kable_styling()
@@ -1501,6 +1516,7 @@ tib %>%
 ```{r parameters3}
 #| code-fold: true
 #| code-summary: Parameterize the Healthy Longevity Model (continued)
+#| cache: true
 
 vec <-  # a simple function to return the vec of an array
     function(x) {
@@ -1543,12 +1559,6 @@ params3_ <- with(params,modifyList(params,list(
         D
     }
 )))
-```
-
-```{r parameters3-contd}
-#| code-fold: true
-#| code-summary: Parameterize the Healthy Longevity Model (continued)
-#| cache: true
 
 params3_ <- with(params3_,modifyList(params3_,list(
     # Natural History Transition Rate Matrix
@@ -1611,11 +1621,9 @@ params3_ <- with(params3_,modifyList(params3_,list(
       }))   
 )))
 
-# not sure why this is needed, but otherwise the length gets set too long...
-  params3 <- with(params3_,modifyList(params3_,list(
-      mR_ = mR %>% transpose() 
-  )))
-  params3$mR = params3$mR_
+# not sure why this is needed, but otherwise the length ogets set too long...
+params3 <- with(params3_, modifyList(params3_, list(mR_ = mR %>% transpose())))
+params3$mR = params3$mR_
 
 params3 <- with(params3,modifyList(params3,list(
     mV = mR %>% map(~({
@@ -1762,54 +1770,82 @@ V_QALY = with(params3,matrix(0,nrow=tau, ncol = omega))
 V_QALY[1,] <- disc[-length(disc)]*with(params3,uH)
 V_QALY[2,] <- disc[-length(disc)]*with(params3,uCVD)
 
-LE3 <- params3 %>% healthy_longevity_occupancy(H = H, V = V_LE)
-YLD3 <- params3 %>% healthy_longevity_occupancy(H = H, V = V_YLD)
-QALY3 <- params3 %>% healthy_longevity_occupancy(H = H, V = V_QALY)
+LE3_ <- params3 %>% healthy_longevity_occupancy(H = H, V = V_LE)
+QALY3_ <- params3 %>% healthy_longevity_occupancy(H = H, V = V_QALY)
+YLD3_ <- params3 %>% healthy_longevity_occupancy(H = H, V = V_YLD)
 
 remaining_life_expectancy <- with(params3,(1/r_ann) * (1 - exp(-r_ann * fExR(ages))))
+YLL3_ <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy, disc = disc[-length(disc)])
+DALY3_ <- map2(YLL3_,YLD3_,~(.x+.y))
 
-YLL3 <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy, disc = disc[-length(disc)])
+qaly_daly_ <- rep(1,length(params3$ages))
+QALY_DALY3_YLL_ <- params3 %>% healthy_longevity_occupancy(H = H, V = V_LE)
+QALY_DALY3_ <- map2(QALY_DALY3_YLL_,YLD3_,~(.x+.y))
 
-DALY3 <- map2(YLL3,YLD3,~(.x+.y))
+LE3 <- LE3_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1]
+}))
 
-# # Technically this gives the YLL outcome we shoudl report above. 
-# DALY3 %>% map(~({
-#   (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
-# }))
+QALY3 <- QALY3_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1]
+}))
 
-result3 <- cbind(LE3 = LE3$natural_history[1], YLD3 = YLD3$natural_history[1], YLL3 = YLL3$natural_history[1],DALY3 = DALY3$natural_history[1]) %>% 
-    rbind(cbind(LE3 = LE3$prevent[1], YLD3 = YLD3$prevent[1], YLL3 = YLL3$prevent[1],DALY3 = DALY3$prevent[1])) %>% 
-    rbind(cbind(LE3 = LE3$treat[1], YLD3 = YLD3$treat[1], YLL3 = YLL3$treat[1],DALY3 = DALY3$treat[1])) %>% 
-     rbind(cbind(LE3 = LE3$prevent_treat[1], YLD3 = YLD3$prevent_treat[1], YLL3 = YLL3$prevent_treat[1],DALY3 = DALY3$prevent_treat[1]))    %>% 
-    as.data.frame() %>% 
-    mutate_all(~as.numeric(.))  %>% 
-    mutate(strategy = c("natural_history","prevent","treat","prevent_treat")) %>% 
-    mutate(approach = "Healthy Longevity") %>% 
-    dplyr::select(approach, strategy, LE = LE3, YLD=YLD3, YLL=YLL3, DALY=DALY3) 
+YLD3 <- YLD3_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1]
+}))
 
+YLL3 <- YLL3_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1]
+}))
+
+DALY3 <- DALY3_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1]
+}))
+
+QALY_DALY3 <- QALY_DALY3_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1]
+}))
+
+
+QALY_DALY3 = QALY3 %>% map(~(NA))
+
+result3 <- cbind(LE3, YLD3,YLL3,DALY3,QALY_DALY3) %>%
+    as.data.frame() %>%
+    mutate_all(~as.numeric(.))  %>%
+    rownames_to_column(var="strategy") %>%
+    mutate(approach = "Markov Chain With Rewards") %>%
+    dplyr::select(approach, strategy, LE = LE3, YLD=YLD3, YLL=YLL3, DALY=DALY3,QALY_DALY=QALY_DALY3)
 
 tib <- result1 %>%
     bind_rows(result2) %>% 
-    bind_rows(result3)
+  bind_rows(result3)
 
 tib %>%
     arrange(strategy) %>%
     select(-strategy) %>%
-    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
+    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs","DALY-like QALY")) %>% 
     kable_styling() %>% 
-    pack_rows(index = c("natural_history" = 3, "prevention" = 3, "treatment" = 3,"prevent_treat" = 3)) %>%
+    pack_rows(index = c("natural_history" =3, "prevention" = 3, "treatment" = 3,"prevent_treat" = 3)) %>%
     kable_styling()
+
 
 
 ```
 
 ```{r table-diff-daly}
 #| code-fold: true
-#| code-summary: QALY plot
+#| code-summary: DALY changes
 #| tbl-cap: Disability-Adjusted Life Year Outcome Changes Relative to Natural History Model
 
 tib %>% 
     gather(outcome,value,-approach,-strategy) %>% 
+    na.omit() %>% 
     unite(outcome,outcome,strategy) %>% 
     spread(outcome,value) %>% 
     select(approach,starts_with("DALY")) %>% 
@@ -1817,6 +1853,27 @@ tib %>%
            DALY_treat = DALY_treat - DALY_natural_history,
            DALY_prevent_treat = DALY_prevent_treat - DALY_natural_history) %>% 
     select(approach, DALY_natural_history, DALY_prevent, DALY_treat, DALY_prevent_treat) %>% 
+    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Markov Chain With Rewards"))) %>% 
+    arrange(approach) %>% 
+    kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment","incDALY Prevention and Treatment")) %>% 
+    kable_styling()
+```
+
+```{r table-diff-qaly-daly}
+#| code-fold: true
+#| code-summary: DALY changes, contd
+#| tbl-cap: Disability-Adjusted Life Year Outcome Changes Relative to Natural History Model
+
+tib %>% 
+    gather(outcome,value,-approach,-strategy) %>% 
+    na.omit() %>% 
+    unite(outcome,outcome,strategy) %>% 
+    spread(outcome,value) %>% 
+    select(approach,starts_with("QALY_DALY")) %>% 
+    mutate(QALY_DALY_prevent = QALY_DALY_prevent - QALY_DALY_natural_history,
+           QALY_DALY_treat = QALY_DALY_treat - QALY_DALY_natural_history,
+           QALY_DALY_prevent_treat = QALY_DALY_prevent_treat - QALY_DALY_natural_history) %>% 
+    select(approach, QALY_DALY_natural_history, QALY_DALY_prevent, QALY_DALY_treat, QALY_DALY_prevent_treat) %>% 
     mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Healthy Longevity"))) %>% 
     arrange(approach) %>% 
     kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment","incDALY Prevention and Treatment")) %>% 
@@ -1873,7 +1930,6 @@ remaining_life_expectancy_endogenous <- LE3 %>% map(~({.x[seq(1,params3$tau*para
 YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
 ```
 
-
 ## DALYs by Year
 
 ```{r daly-by-year}
@@ -1884,7 +1940,7 @@ YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining
 #| code-fold: true
 #| code-summary: Create Plot by Age
 #| 
-p1 = YLL3 %>% map(~({
+p1 = YLL3_ %>% map(~({
   as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
   mutate(age = params3$ages)  %>% 
   mutate(initial = params3$tr_names[1])
@@ -1896,7 +1952,7 @@ p1 = YLL3 %>% map(~({
   geom_dl(method = list("first.points","bumpup", hjust=-1),aes(label = strategy)) +
     theme(legend.position = "none") + ggtitle("YLL") + labs(x = "Age", y = "YLL")
 
-p2 = YLD3 %>% map(~({
+p2 = YLD3_ %>% map(~({
   as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
   mutate(age = params3$ages)  %>% 
   mutate(initial = params3$tr_names[1])
@@ -1908,8 +1964,7 @@ p2 = YLD3 %>% map(~({
   geom_dl(method = list("first.points","bumpup", hjust=-1),aes(label = strategy))  + 
   theme(legend.position = "none") + ggtitle("YLD") + labs(x = "Age", y = "YLD")
 
-
-p3 = DALY3 %>% map(~({
+p3 = DALY3_ %>% map(~({
   as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
   mutate(age = params3$ages)  %>% 
   mutate(initial = params3$tr_names[1])
