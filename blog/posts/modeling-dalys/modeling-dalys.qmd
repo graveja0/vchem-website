@@ -1,5 +1,5 @@
 ---
-title: "Construction of a Policy Decision Model Using Global Burden of Disease Data"
+title: "Construction of a Policy Decision-Analytic Model Using Global Burden of Disease Data"
 subtitle: "Structuring and Adapting Models for Multidimensional Health Outcomes"
 author: John Graves
 date: "2023-12-15"
