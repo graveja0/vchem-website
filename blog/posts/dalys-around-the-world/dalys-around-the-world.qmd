@@ -38,6 +38,8 @@ library(kableExtra)
 library(hrbrthemes)
 library(furrr)
 library(tictoc)
+library(patchwork)
+
 
 rate_to_prob <- function(x) 1-exp(-x)
 prob_to_rate <- function(x) -log(1-x)
@@ -1740,6 +1742,11 @@ YLL3 <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expec
 
 DALY3 <- map2(YLL3,YLD3,~(.x+.y))
 
+# # Technically this gives the YLL outcome we shoudl report above. 
+# DALY3 %>% map(~({
+#   (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+# }))
+
 result3 <- cbind(LE3 = LE3$natural_history[1], YLD3 = YLD3$natural_history[1], YLL3 = YLL3$natural_history[1],DALY3 = DALY3$natural_history[1]) %>% 
     rbind(cbind(LE3 = LE3$prevent[1], YLD3 = YLD3$prevent[1], YLL3 = YLL3$prevent[1],DALY3 = DALY3$prevent[1])) %>% 
     rbind(cbind(LE3 = LE3$treat[1], YLD3 = YLD3$treat[1], YLL3 = YLL3$treat[1],DALY3 = DALY3$treat[1])) %>% 
@@ -1832,34 +1839,53 @@ YLL3_endogenous %>% map(~(.x[1]))
 ## DALYs by Year
 
 ```{r}
-
-YLL3 %>% map(~({
-  as.data.frame(as.matrix(.x)) %>% mutate(age = sort(rep(params3$ages,2))) %>% 
-  mutate(initial = rep(params3$tr_names,params3$omega))
-})) %>% 
-  set_names(params3$tx_names) %>% 
-  bind_rows(.id = "strategy") %>% 
-  ggplot(aes(x = age, y = V1, colour = initial, lty=strategy)) + geom_line() + theme_ipsum() + 
-  scale_colour_aaas()
-```
-
-
-```{r}
-
-YLL3 %>% map(~({
+#| fig-align: center
+#| fig-width: 10
+#| fig-height: 8
+#| fig-cap: DALYs by Model Starting Age
+#| code-fold: true
+#| code-summary: Create Plot by Age
+#| 
+p1 = YLL3 %>% map(~({
   as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
   mutate(age = params3$ages)  %>% 
   mutate(initial = params3$tr_names[1])
 })) %>% 
   set_names(params3$tx_names) %>% 
   bind_rows(.id = "strategy") %>% 
-  ggplot(aes(x = age, y = V1, colour = initial, lty=strategy)) + geom_line() + theme_ipsum() + 
-  scale_colour_aaas()
+  ggplot(aes(x = age, y = V1, colour = strategy, lty=strategy)) + geom_line() + theme_ipsum() + 
+  scale_colour_aaas() + 
+  geom_dl(method = list("first.points","bumpup", hjust=-1),aes(label = strategy)) +
+    theme(legend.position = "none") + ggtitle("YLL") + labs(x = "Age", y = "YLL")
 
-# Technically this gives the YLL outcome we shoudl report above. 
-YLL3 %>% map(~({
-  (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
-}))
+p2 = YLD3 %>% map(~({
+  as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
+  mutate(age = params3$ages)  %>% 
+  mutate(initial = params3$tr_names[1])
+})) %>% 
+  set_names(params3$tx_names) %>% 
+  bind_rows(.id = "strategy") %>% 
+  ggplot(aes(x = age, y = V1, colour = strategy, lty=strategy)) + geom_line() + theme_ipsum() + 
+  scale_colour_aaas() + 
+  geom_dl(method = list("first.points","bumpup", hjust=-1),aes(label = strategy))  + 
+  theme(legend.position = "none") + ggtitle("YLD") + labs(x = "Age", y = "YLD")
+
+
+p3 = DALY3 %>% map(~({
+  as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
+  mutate(age = params3$ages)  %>% 
+  mutate(initial = params3$tr_names[1])
+})) %>% 
+  set_names(params3$tx_names) %>% 
+  bind_rows(.id = "strategy") %>% 
+  ggplot(aes(x = age, y = V1, colour = strategy, lty=strategy)) + geom_line() + theme_ipsum() + 
+  scale_colour_aaas() + 
+  geom_dl(method = list("first.points","bumpup", hjust=-1),aes(label = strategy))  + 
+  theme(legend.position = "none") + ggtitle("DALY") + labs(x = "Age", y = "DALY")
+
+
+p3 + p1  / p2
+
 
 
 ```
