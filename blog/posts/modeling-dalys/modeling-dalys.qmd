@@ -1,6 +1,6 @@
 ---
-title: "Construction of a Policy Decision-Analytic Model Using Global Burden of Disease Data"
-subtitle: "Structuring and Adapting Models for Multidimensional Health Outcomes"
+title: "Structuring Models for Multidimensional Health Outcomes"
+subtitle: "Construction of a Decision-Analytic Discrete Time Markov Model Using Global Burden of Disease Data"
 author: John Graves
 date: "2023-12-15"
 categories: [CEA]
@@ -16,6 +16,9 @@ bibliography: "references.bib"
 reference-location: margin
 self-contained: true
 image: "media/DALY-image.svg"
+editor: 
+  markdown: 
+    wrap: 72
 ---
 
 ```{r setup}
@@ -128,13 +131,21 @@ tibble::tribble(
 
 # Introduction
 
-Our objective is to construct a decision model using data and parameters from the [2019 Global Burden of Disease study](https://www.healthdata.org/research-analysis/gbd).
+Our objective is to construct a decision model using data and parameters
+from the [2019 Global Burden of Disease
+study](https://www.healthdata.org/research-analysis/gbd).
 
 We will consider three methods:
 
-1.  A **Markov Trace-Based** approach that separately tracks deaths from disease and from other non-disease-related causes, and uses differences in disease-related deaths across cycles to calculate years of life lost to disease (YLLs).
-2.  A **Transition States** approach that is similar to Markov trace approach, but that draws on a death tracking state to calculate YLLs.
-3.  A **Markov Chain with Rewards** approach to Healthy Longevity as developed in @caswell2018 and @caswell2021.
+1.  A **Markov Trace-Based** approach that separately tracks deaths from
+    disease and from other non-disease-related causes, and uses
+    differences in disease-related deaths across cycles to calculate
+    years of life lost to disease (YLLs).
+2.  A **Transition States** approach that is similar to Markov trace
+    approach, but that draws on a death tracking state to calculate
+    YLLs.
+3.  A **Markov Chain with Rewards** approach to Healthy Longevity as
+    developed in @caswell2018 and @caswell2021.
 
 ```{r state-diagrams}
 #| echo: false
@@ -171,15 +182,24 @@ We will consider three methods:
 
 ```
 
-Our model will be flexibly parameterized such that practitioners can model any disease or country/region represented in the GBD data. For our purposes here, however, we will focus on a general cardiovascular disease model for the United Kingdom, and using country mortality data for 2019. We will also focus on a pooled model for the full population---though the GBD data do allow us to separately model mortality and disease-specific incidence and death separately for males and females.
+Our model will be flexibly parameterized such that practitioners can
+draw on the provided code to model any disease or country/region
+represented in the GBD data. For our purposes here, however, we will
+focus on a general cardiovascular disease model for the United Kingdom.
+We will also focus on a model for the full population---though the GBD
+data also allow us to separately model mortality and disease-specific
+incidence and death separately for males and females.
 
-A state ("bubble") diagram of our basic model structure is provided below:
+A state ("bubble") diagram of the basic model structure is provided in
+@fig-simplemodel:
 
-![State Diagram for Cardiovascular Disease Model](media/healthy-cvd-dead.png){fig-align="center"}
+![State Diagram for Cardiovascular Disease
+Model](media/healthy-cvd-dead.png){#fig-simplemodel fig-align="center"}
 
 ```{r global-parameters}
 #| code-fold: false
 #| echo: true
+
 life_table_year = 2019 
 location = "United Kingdom"
 cause_id = 491 # CVD
@@ -189,6 +209,11 @@ radix = 100000
 
 # Data Sources
 
+As noted above, all data and parameters (unless assumed) are drawn from
+the [2019 Global Burden of Disease
+study](https://www.healthdata.org/research-analysis/gbd). Citations for
+specific datasets used are provided in @tbl-datasource.
+
 | Description                                                                                                                         | Source                                          |
 |----------------------------------|--------------------------------------|
 | [Life Tables](https://ghdx.healthdata.org/record/ihme-data/gbd-2019-life-tables-1950-2019)                                          | @globalburdenofdiseasecollaborativenetwork2020a |
@@ -196,16 +221,19 @@ radix = 100000
 | [Disease-Related Death](https://vizhub.healthdata.org/gbd-results/)                                                                 | @GBD2019                                        |
 | [Disease Prevalence by Age](https://vizhub.healthdata.org/gbd-results/)                                                             | @GBD2019                                        |
 | [Reference Life Table](https://ghdx.healthdata.org/record/ihme-data/global-burden-disease-study-2019-gbd-2019-reference-life-table) | @globalburdenofdiseasecollaborativenetwork2021  |
+| [Disability Weights](https://ghdx.healthdata.org/record/ihme-data/gbd-2019-disability-weights)                                      | @globalburdenofdiseasecollaborativenetwork2020  |
 
-: Data Sources and Citatations
+: Data Sources and Citations {#tbl-datasource}
 
-# Population Data
+# Process GBD Data
+
+## Country Population Data
 
 ```{r download-population-data}
 #| code-fold: true
 #| code-summary: Download and process GBD incidence data
 
-if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_population_{location}-{life_table_year}.rds")))) {
+if (!file.exists(here(glue("blog/posts/modeling-dalys/_data/gbd_population_{location}-{life_table_year}.rds")))) {
   gbd_population <- c("https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_POP_2010_2019_SYA.zip")
   
   population <-
@@ -243,23 +271,38 @@ if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_populati
     left_join(lut_age_incidence,"age_name")
   
   
-  df_population %>% write_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_population_{location}-{life_table_year}.rds")))
+  df_population %>% write_rds(here(glue("blog/posts/modeling-dalys/_data/gbd_population_{location}-{life_table_year}.rds")))
 } 
 
-df_population <- read_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_population_{location}-{life_table_year}.rds")))
+df_population <- read_rds(here(glue("blog/posts/modeling-dalys/_data/gbd_population_{location}-{life_table_year}.rds")))
 ```
 
-# Cause-Deleted Life Tables
+## Construct a Cause-Deleted Life Table
 
-## Life Tables
+For a disease as prevalent as CVD, it is important that background
+mortality in our model net out all CVD-related deaths---otherwise, we
+will overcount CVD deaths, as they would be captured in a separate
+death-from-CVD rate, and in the background mortality rate.
 
-The GBD life table data are arranged by age group, so we need to download a separate file for each group, and extract the relevant location and year.
+To construct a cause-deleted life table we will use the GBD query tool
+to extract an estimate of the percentage of deaths from CVD for various
+(5-year) age groups. We will then apply this percentage to deaths in the
+overall life table to obtain an estimate of the number of deaths from
+CVD. We net this from total deaths and reconstruct the life table using
+a [Multiple Decrements
+approach](https://grodri.github.io/demography/neoplasms).
+
+### Life Table Data
+
+The GBD life table data are arranged by age group, so we need to
+download a separate file for each group, and extract the relevant
+location and year.
 
 ```{r construct-life-table}
 #| code-fold: true
 #| code-summary: Download and process GBD life table data. 
 
-if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))) {
+if (!file.exists(here(glue("blog/posts/modeling-dalys/_data/gbd_life_table_{location}-{life_table_year}.rds")))) {
     gbd_life_tables <- c(
       "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_28_0.zip",
       "https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_LIFE_TABLES_1950_2019_ID_5_0.zip",
@@ -359,15 +402,22 @@ if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_tab
       coef(mort_fit) %>% data.frame() %>% t()
     })))
 
-  lt %>% write_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))
+  lt %>% write_rds(here(glue("blog/posts/modeling-dalys/_data/gbd_life_table_{location}-{life_table_year}.rds")))
   
 } 
-df_life_table = read_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))
+df_life_table = read_rds(here(glue("blog/posts/modeling-dalys/_data/gbd_life_table_{location}-{life_table_year}.rds")))
 ```
 
-### Life Tables
+The overall life table for our country of interest is shown in
+@tbl-life-table. Relevant columns are described in
+@tbl-life-table-parameters.
 
 ```{r generate-life-table}
+#| label: tbl-life-table
+#| tbl-cap: Overall Life Table
+#| code-fold: true
+#| code-summary: Construct Overall Life Table
+
 lt <- 
     df_life_table %>% 
     select(location_name,location_id,life_table) %>% 
@@ -382,11 +432,43 @@ lt <-
     mutate(dx = lx * qx) %>% # Deaths = at risk * probability of death
     as.data.table()
 setkey(lt, age)
+
+lt %>% select(-location_id) %>% kable(digits = 3) %>% kable_styling()
 ```
 
-## GBD Incidence and Cause of Death Data
+| Parameter | Description                                                                 |
+|--------------|---------------------------------------------------------|
+| ex        | Remaining life expectancy                                                   |
+| qx        | Probability of death in age group                                           |
+| mx        | Death rate in age group                                                     |
+| p         | Survival probability (1-qx)                                                 |
+| cump      | Cumulative survival probability                                             |
+| lx        | Number at risk (set at the `radix` parameter value for the first age group) |
+| dx        | Number of deaths in age group                                               |
 
-We'll use the [GBD data tool](https://vizhub.healthdata.org/gbd-results/). Note you need a login to download.
+: Life Table Parameters {#tbl-life-table-parameters}
+
+Note the life expectancy at age 0 (`ex` in the table). We'll come back
+to this later, when we benchmark life expectancy in our model vs. the
+life table value.
+
+## GBD Cause of Death and Disease Incidence Data
+
+To construct cause-deleted life tables we need an estimate of the number
+of deaths (`dx`) due to CVD. And to model transitions from the Healthy
+state to the CVD health state we'll need disease incidence rates. To
+obtain these data we'll draw on the [GBD data
+tool](https://vizhub.healthdata.org/gbd-results/) to extract the
+percentage of deaths due to CVD, and the CVD incidence rate.[^1]
+
+[^1]: Note you need an account with login and password to download these
+    data.
+
+The specific data query used for this example is provided in @fig-gbd,
+and the specific cause-of-death percentages for the country/region of
+interest are shown in @tbl-gbd-cause-of-death and
+@tbl-gbd-incidence-rate. Code for constructing the cause-deleted life
+table will be provided later in this document.
 
 ::: {#fig-gbd layout-ncol="2"}
 ![Cause of Death](media/gbd-data-cause-of-death.png){#fig-cod}
@@ -396,11 +478,15 @@ We'll use the [GBD data tool](https://vizhub.healthdata.org/gbd-results/). Note 
 Global Burden of Disease Data Query Tool
 :::
 
-You can then click on "Download." To obtain the data in the code below, I downloaded the .csv file and used the [datapasta](https://github.com/MilesMcBain/datapasta) package in R to simply copy and paste the values as a table. Alternatively, you could just manually load the .csv file.
-
 ```{r get-gbd-data}
 #| code-fold: true
 #| code-summary: Download and process GBD CVD incidence and cause of death data. 
+
+# You can then click on "Download." To obtain the data in the code below,
+# I downloaded the .csv file and used the
+# [datapasta](https://github.com/MilesMcBain/datapasta) package in R to
+# simply copy and paste the values as a table. Alternatively, you could
+# just manually load the .csv file.
 
 
 df_gbd <- 
@@ -687,7 +773,41 @@ tibble::tribble(
 
 ```
 
+```{r show-gbd-data}
+#| tbl-cap: GBD Cause-of-Death Data
+#| label: tbl-gbd-cause-of-death
+#| code-fold: true
+#| code-summary: GBD Cause of Death Data Table
+
+df_gbd %>% 
+  filter(sex_name=="Both") %>% 
+  filter((measure_name=="Deaths" & metric_name=="Percent")) %>% 
+  mutate(age_name= factor(age_name,levels=lut_age_incidence$age_name)) %>% arrange(age_name) %>% 
+  filter(!is.na(age_name))  %>% 
+  select(-location_id,-sex_id,-sex_name,-age_id,-cause_id,-metric_id,-location_name,-cause_name,-measure_name,-measure_id,-year) %>% 
+  kable(digits = 3) %>% 
+  kable_styling()
+```
+
+```{r show-gbd-incidence-data}
+#| tbl-cap: GBD CVD Incidence Rate Data
+#| label: tbl-gbd-incidence-rate
+#| code-fold: true
+#| code-summary: GBD Incidence Rate (per 100k population) Data Table
+
+df_gbd %>% 
+  filter(sex_name=="Both") %>% 
+  filter((measure_name=="Incidence" & metric_name=="Rate")) %>% 
+  mutate(age_name= factor(age_name,levels=lut_age_incidence$age_name)) %>% arrange(age_name) %>% 
+  filter(!is.na(age_name))  %>% 
+  select(-location_id,-sex_id,-sex_name,-age_id,-cause_id,-metric_id,-location_name,-cause_name,-measure_name,-measure_id,-year) %>% 
+  kable(digits = 3) %>% 
+  kable_styling()
+```
+
 # Parameterize Model
+
+Our next step is to parameterize the model.
 
 ```{r parameterize}
 # Parameterize
@@ -699,90 +819,97 @@ params <- list(
     
     tr_names = c("Healthy","CVD"), # transient health states
     ab_names = c("DeathOC","DeathCVD"), # absorbing health states
-    n_states = 4,
+    n_states = 4, # total number of health states
     
-    df_gbd = df_gbd,
-    life_table = lt, 
+    df_gbd = df_gbd,  # disease incidence and cause-of-death data
+    life_table = lt,  # overall life table
     
-    horizon = 120,  
-    r_ann = 1e-6,
-    Delta_t = 1,
-    age0 = 0,
-    s0T = c(1,0,0,0),
+    horizon = 120,    # model time horizon (in years)  
+    r_ann = 1e-6,     # annual discount rate
+    Delta_t = 1,      # time step (1 = yearly, 1/12 = monthly, etc.)
+    age0 = 0,         # initial age in model
+    s0T = c(1,0,0,0), # initial state occupancy  
+                      # c(1,0,0,0) means the modeled cohort starts off heatlhy
     
-    uCVD = 0.773,
-    uD = 0,
-    uH = 1,
+    uCVD = 0.773,     # CVD utility payoff value
+    uD = 0,           # Death utility payoff value
+    uH = 1,           # Heatlhy utility payoff  value
     
-    dw = 0.041,
+    dw = 0.041,       # CVD disability weight
     
-    c_Prevent = 10,
-    c_Treat = 500,
-    c_CVD = 500, 
-    c_DeathCVD = 25000,
+    c_Prevent = 10,   # Cycle cost of prevention strategy 
+    c_Treat = 500,    # Cycle cost of treatment strategy
+    c_CVD = 500,      # Cycle cost of CVD health state
+    c_DeathCVD = 25000, # Transition cost of death from CVD
     
-    hr_treat = 0.85,
-    hr_prevent = 0.9,
+    hr_treat = 0.85,  # Hazard Ratio for Treatment Strategy
+    hr_prevent = 0.9, # Hazard Ratio for Prevention Strategy
     
     # GBD Calibration parameters (helps calibrate to reported prevalence by age)
-    rr_deathCVD = 1.1,
+    rr_deathCVD = 1.1,  
     rr_incidence = 0.75,
     
     cycle_correction = "half-cycle",
     
-    ExR = 
-    # Global Burden of Disease Collaborative Network. Global Burden of Disease Study 
-    # 2019 (GBD 2019) Reference Life Table. Seattle, United States of America: 
-    # Institute for Health Metrics and Evaluation (IHME), 2020
-    tibble::tribble(
-        ~Age, ~Life.Expectancy,
-        0L,       88.8718951,
-        1L,      88.00051053,
-        5L,      84.03008056,
-        10L,      79.04633476,
-        15L,       74.0665492,
-        20L,      69.10756792,
-        25L,      64.14930031,
-        30L,       59.1962771,
-        35L,      54.25261364,
-        40L,      49.31739311,
-        45L,      44.43332057,
-        50L,      39.63473787,
-        55L,      34.91488095,
-        60L,      30.25343822,
-        65L,      25.68089534,
-        70L,      21.28820012,
-        75L,      17.10351469,
-        80L,      13.23872477,
-        85L,      9.990181244,
-        90L,      7.617724915,
-        95L,      5.922359078
-    )
+    ExR =  # Reference life table from GBD
+      tibble::tribble(
+          ~Age, ~Life.Expectancy,
+          0L,       88.8718951,
+          1L,      88.00051053,
+          5L,      84.03008056,
+          10L,      79.04633476,
+          15L,       74.0665492,
+          20L,      69.10756792,
+          25L,      64.14930031,
+          30L,       59.1962771,
+          35L,      54.25261364,
+          40L,      49.31739311,
+          45L,      44.43332057,
+          50L,      39.63473787,
+          55L,      34.91488095,
+          60L,      30.25343822,
+          65L,      25.68089534,
+          70L,      21.28820012,
+          75L,      17.10351469,
+          80L,      13.23872477,
+          85L,      9.990181244,
+          90L,      7.617724915,
+          95L,      5.922359078
+      )
 )
 
 params <- 
     with(params,{
         modifyList(params,list(
-            omega = horizon/Delta_t,
-            r_Delta_t = r_ann * Delta_t,
-            ages = (0:(horizon/Delta_t))*Delta_t + age0,
+            omega = horizon/Delta_t,  # Total number of cycles
+            r_Delta_t = r_ann * Delta_t,  # Cycle discount rate
+            ages = (0:(horizon/Delta_t))*Delta_t + age0,  # Age in each cycle
+             # Approximation function for reference life table life expectancies:
             fExR = function(x) pmax(0,unname(Hmisc::approxExtrap(ExR$Age, ExR$Life.Expectancy,xout = x)$y))
         ))
     })
 
 
-
-# 
 # First cycle will be 1,0,0,0 so need to slice off one age for 
 # construction of transition matrices, but leave one
-# for the trace
+# for the trace.
 params$ages_trace <- params$ages
 params$ages <- params$ages[-length(params$ages)]
 ```
 
 ## Define Functions for Time Inhomogeneous Parameters
 
-### Disease Incidence
+Nearly all health state progression parameters in our model are age-depdendent. We therefore need to define functions for each transition rate that are a function of the age of the cohort in the cycle. The functions below draw on the GBD data above to estimate age-specific transition rates for the following transitions:
+
+- `rH_CVD(age)` = Healthy to CVD (uses a slightly calibrated GBD disease incidence rate).
+- `rCVD_D(age)` = CVD to death from CVD (uses the cause-specific mortality rate from a cause-deleted life table).
+- `rD(age)` =  Death from other causes (uses cause-deleted mortality rate from a cause-deleted life table).
+
+For this model, we will simply draw rates directly from the GBD life tables and other data. A limitation of this approach is that ages are grouped into five-year buckets---meaning that the mortality rate will be held constant within an age group. 
+
+As an alternative option that provides age-specific (i.e., ungrouped) rates, we also include a parametric morality model (based on the [Heligman-Pollard model, which captures mortality across ages quite well](https://www.soa.org/globalassets/assets/library/research/transactions-of-society-of-actuaries/1990-95/1992/january/tsa92v446.pdf)).[^explore]
+
+[^explore]: To explore more on parametric mortality modeling, see our interactive tutorial [here](https://graves-vanderbilt.shinyapps.io/1-mortality-modeling/#section-construct-a-simple-alive-dead-model). 
 
 ```{r age-dependent-incidence}
 #| code-fold: true
@@ -809,7 +936,10 @@ rH_CVD <- function(aa,gg = "Both") {
 
 ```
 
-### Mortality
+The leftmost panel in @fig-hp shows the observed vs. fitted log(mortality rate) for our population, while the rightmost panel shows the residual. The residuals show clearly that the model fits mortality rates well up until about age 80, at which point the modeled mortality rate overstates the death rate until roughly age 95---after which the modeled mortality rate is well below the observed rate.  
+
+In the code below, we provide alternative functions to draw on the modeled mortality rates to return age-specific death transition rates---though note that in our results below, we continue to draw directly off the GBD data. 
+
 
 ```{r parametric-mortality}
 #| code-fold: true
@@ -859,6 +989,21 @@ fit_mort <- function(params, mortality_model = "HP2", gg = "Both", outcome = "dx
         return(fit_hp)
     }))
 }
+```
+
+
+```{r heligman-pollard-figure}
+#| label: fig-hp
+#| fig-cap: Fitted vs. Observed Mortality Using Heligman-Pollard Parametric Mortality Model
+#| code-fold: true
+#| code-summary: Fit and Plot Heligman-Pollard Model
+fit_hp = params %>% fit_mort(outcome = "dx") 
+plot(fit_hp)
+```
+
+```{r update-params-with-mortality-model}
+#| code-fold: true
+#| code-summary: Update parameters with Heligman-Pollard models for CVD deaths and non-CVD deaths.
 
 params <- modifyList(params,{
     list(
@@ -867,7 +1012,6 @@ params <- modifyList(params,{
         mort_fit_dx_cvd = params %>% fit_mort(outcome = "dx_cvd")  %>% coef()
     )
 })
-
 
 disc = 
   exp(-params$r_Delta_t * 0:(params$omega))
@@ -986,13 +1130,29 @@ rCVD_D_p = function(aa,params) {
 }
 ```
 
+Using the functions defined above, we can easily extract transition rates for a given age. Echoing the comments above, note that the basic function (`rD(age)`) uses grouped mortality rate data, whereas the function based on the Heligman-Pollard model yields different rates for each age:
+
+```{r}
+# Rate of non-cause death for a 75 and 76 year-old
+rD(75)
+rD(76)
+# Rate of non-cause death for a 75 and 76 year-old based on Heligman Pollard model
+rD_p(75, params = params)
+rD_p(76, params = params)
+```
+
 # Approach 1: Markov Trace
+
+With the basic parameters and parameter functions defined, we can now move to our first approach. Under this approach, we will separate cause-specific and non-CVD deaths as separate health states. The updated state transition diagram is shown in @fig-diagram1:
+
+![State Transition Diagram for Approach 1](media/healthy-cvd-dead-deadcvd.png){#fig-diagram1}
+
+Building out this model structure requires constructing a series of transition probability matrices. 
 
 ```{r params1}
 #| cache: true
 #| code-fold: true
 #| code-summary: Parameterize Markov Model
-
 
 params1 <- with(params,modifyList(params,list(
     # Natural History Transition Rate Matrix
@@ -1066,6 +1226,8 @@ params1 <- with(params1,modifyList(params1,list(
 
 ```
 
+We next draw upon the transition probabilty matrices to create a Markov trace (@tbl-markovtrace1):
+
 ```{r trace1}
 #| code-fold: true
 #| code-summary: Calculate Markov Trace
@@ -1090,10 +1252,31 @@ trace1 <-
 tr <- trace1$natural_history
 ```
 
-## Checkpoint 1: Overall Survival
+```{r}
+#| code-fold: true
+#| code-summary: Markov Trace
+#| tbl-cap: Markov Trace for Approach 1
+#| label: tbl-markovtrace1
+
+tr  %>% 
+  as_tibble() %>% 
+  mutate(age = params$ages_trace)  %>% 
+  mutate(cycle = row_number()-1) %>% 
+  select(age,cycle,everything()) %>% 
+  filter(age %in% lut_age_incidence$age) %>% 
+  kable(digits=3) %>% 
+  kable_styling()
+```
+
+## Checkpoint: Overall Survival
+
+Before we proceed, it is useful to stop and check whether the experience of our modeled cohort mirrors the experience of the population as summarized in the GBD input data sources. 
+
+In @fig-survival below, we calculate and plot the percent of the cohort surviving at each age (`1 - DeathOC - DeathCVD`) and overlay the survival probability from the population life table used to parameterize the model. As the figure shows, our modeled cohort nearly exactly matches the survival experience of the population. 
 
 ```{r survival}
 #| fig-cap: Survival Curve
+#| label: fig-survival
 #| code-fold: true
 #| code-summary: Construct Survival Curves
 
@@ -1131,9 +1314,17 @@ as.matrix(tr) %*% d_ %>% data.frame() %>%
 
 ## Checkpoint: CVD Prevalence
 
+Our next checkpoint is designed to assess whether CVD prevalance at any age matches the prevalance value in the GBD data. @fig-prevalence below shows this using the parameters above. 
+
+::: {.callout-note appearance="simple"}
+Note that this 
+:::
+
 ```{r prevalence}
 #| code-fold: true
 #| code-summary: Prevalence by Age, Model vs. GBD Data
+#| label: fig-prevalence
+#| fig-cap: Prevalence by Age, Model vs. GBD Data
 
 df_prevalence <- 
   tibble::tribble(
