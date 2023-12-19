@@ -813,6 +813,9 @@ rH_CVD <- function(aa,gg = "Both") {
 ### Mortality
 
 ```{r parametric-mortality}
+#| code-fold: true
+#| code-summary: Fit Parametric Mortality Model
+
 fit_mort <- function(params, mortality_model = "HP2", gg = "Both", outcome = "dx_nocvd") {
     with(params,({
         
@@ -988,7 +991,9 @@ rCVD_D_p = function(aa,params) {
 
 ```{r params1}
 #| cache: true
-#| 
+#| code-fold: true
+#| code-summary: Parameterize Markov Model
+
 
 params1 <- with(params,modifyList(params,list(
     # Natural History Transition Rate Matrix
@@ -1063,6 +1068,9 @@ params1 <- with(params1,modifyList(params1,list(
 ```
 
 ```{r trace1}
+#| code-fold: true
+#| code-summary: Calculate Markov Trace
+
 trace1 <- 
     with(params1, {
         mP %>% map( ~ ({
@@ -1087,7 +1095,9 @@ tr <- trace1$natural_history
 
 ```{r survival}
 #| fig-cap: Survival Curve
-#| 
+#| code-fold: true
+#| code-summary: Construct Survival Curves
+
 # Check Life Expectancy vs. Life Table
 lt_ <- df_life_table %>% 
     select(location_name,location_id,life_table) %>% 
@@ -1123,6 +1133,9 @@ as.matrix(tr) %*% d_ %>% data.frame() %>%
 ## Checkpoint: CVD Prevalence
 
 ```{r prevalence}
+#| code-fold: true
+#| code-summary: Prevalence by Age, Model vs. GBD Data
+
 df_prevalence <- 
   tibble::tribble(
       ~measure_id, ~measure_name, ~location_id,   ~location_name, ~sex_id, ~sex_name, ~age_id,     ~age_name, ~cause_id,               ~cause_name, ~metric_id, ~metric_name, ~year,        ~val,      ~upper,      ~lower,
@@ -1169,6 +1182,9 @@ as.matrix(tr) %>%
 ```
 
 ```{r outcomes1}
+#| code-fold: true
+#| code-summary: Calculate Outcomes
+
 # Life Expectancy (Non-Discounted)
 le_ = with(params1,(matrix(c(1,
               1 ,
@@ -1184,7 +1200,7 @@ LEt <- trace1 %>% map( ~ ({
     tmp 
 }))
 
-LE = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) ; LE
+LE = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) 
 
 
 # Life Expectancy (Non-Discounted)
@@ -1222,7 +1238,6 @@ YLDt <- trace1 %>% map( ~ ({
 }))
 
 YLD = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
-YLD
 
 # YLL
 
@@ -1259,7 +1274,7 @@ QALY_DALYt <- trace1 %>% map( ~ ({
     tmp 
 }))
 
-QALY_DALY = QALY_DALYt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction))); QALY_DALY
+QALY_DALY = QALY_DALYt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
 
 result1 <- cbind(LE, YLD,YLL,DALY) %>% 
     as.data.frame() %>% 
@@ -1278,7 +1293,10 @@ result1 %>%
 # Approach 2: Transition States
 
 ```{r parameters2}
+#| code-fold: true
+#| code-summary: Parameterize Transition State Model 
 #| cache: true
+#| 
 params2 <- with(params,modifyList(params,list(
     tr_names = c("Healthy","CVD"), # transient health states
     ab_names = c("Death","trDeathCVD"), # absorbing health states
@@ -1362,6 +1380,9 @@ params2 <- with(params2,modifyList(params2,list(
 ```
 
 ```{r trace2}
+#| code-fold: true
+#| code-summary: Construct Markov Trace
+
 trace2 <- 
     with(params2, {
         mP %>% map( ~ ({
@@ -1382,6 +1403,9 @@ trace2 <-
 ```
 
 ```{r outcomes2}
+#| code-fold: true
+#| code-summary: Calculate Outcomes Based on Death Transitions 
+
 # Life Expectancy (Non-Discounted)
 le_ = with(params2,(matrix(c(1,
               1 ,
@@ -1397,7 +1421,7 @@ LEt <- trace2 %>% map( ~ ({
     tmp 
 }))
 
-LE2 = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) ; LE
+LE2 = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) 
 
 # Life Expectancy (Non-Discounted)
 qaly_ = with(params2,(matrix(c(uH,
@@ -1437,8 +1461,6 @@ YLDt <- trace2 %>% map( ~ ({
 YLD2 = YLDt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
 
 # YLL
-
-
 Ex <- matrix(0,ncol= 4, nrow = params2$omega+1)
 Ex[,4] =  with(params1,(1/r_ann) * (1 - exp(-r_ann * fExR(ages_trace))))
 
@@ -1477,6 +1499,9 @@ tib %>%
 # Approach 3: Markov Chain with Rewards
 
 ```{r parameters3}
+#| code-fold: true
+#| code-summary: Parameterize the Healthy Longevity Model (continued)
+
 vec <-  # a simple function to return the vec of an array
     function(x) {
         y <- c(x)
@@ -1521,6 +1546,8 @@ params3_ <- with(params,modifyList(params,list(
 ```
 
 ```{r parameters3-contd}
+#| code-fold: true
+#| code-summary: Parameterize the Healthy Longevity Model (continued)
 #| cache: true
 
 params3_ <- with(params3_,modifyList(params3_,list(
@@ -1659,6 +1686,9 @@ params3 <- with(params3,modifyList(params3,list(
 ```
 
 ```{r outcomes3}
+#| code-fold: true
+#| code-summary: Calculate DALY Outcomes
+
 healthy_longevity_occupancy <- function(params, H, V) {
     with(params,{
         map2(mUtilde,mPtilde,~({
@@ -1774,6 +1804,10 @@ tib %>%
 ```
 
 ```{r table-diff-daly}
+#| code-fold: true
+#| code-summary: QALY plot
+#| tbl-cap: Disability-Adjusted Life Year Outcome Changes Relative to Natural History Model
+
 tib %>% 
     gather(outcome,value,-approach,-strategy) %>% 
     unite(outcome,outcome,strategy) %>% 
@@ -1790,6 +1824,10 @@ tib %>%
 ```
 
 ```{r table-diff-qaly}
+#| code-fold: true
+#| code-summary: QALY plot
+#| tbl-cap: Quality Adjusted Life Year Outcome Changes Relative to Natural History Model
+
 tibble(approach = rep("Markov Trace",4), strategy=names(unlist(QALY)),  QALY = unlist(QALY)) %>% 
   bind_rows(
     tibble(approach = rep("Transition States",4), strategy=names(unlist(QALY2)),  QALY = unlist(QALY2))
@@ -1812,33 +1850,33 @@ tibble(approach = rep("Markov Trace",4), strategy=names(unlist(QALY)),  QALY = u
 
 ```
 
-## Endogenous Life Expectancy
+## DALys Based on Endogenous Life Expectancy
+
 $$
 \tilde{\eta}_1^T = 1^T_{\tau_\omega} \tilde{N}
 $$
 
-```{r}
+```{r endogenous}
+#| code-fold: true
+#| code-summary: DALYs based on endogenous life expectancy
+
 N = with(params3,({
   mUtilde %>% map(~({
     solve(diag(tau*omega)-.x)
   }))
-  
 }))
 
 remaining_life_expectancy_endogenous = as.vector(t(rep(1,params3$tau*params3$omega)) %*% N[[1]]) %>% {.[seq(1,params3$tau*params3$omega,2)]}
 YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
-YLL3_endogenous %>% map(~(.x[1]))
 
 remaining_life_expectancy_endogenous <- LE3 %>% map(~({.x[seq(1,params3$tau*params3$omega,2)]})) %>% {.$natural_history}
 YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
-YLL3_endogenous %>% map(~(.x[1]))
-
 ```
 
 
 ## DALYs by Year
 
-```{r}
+```{r daly-by-year}
 #| fig-align: center
 #| fig-width: 10
 #| fig-height: 8
