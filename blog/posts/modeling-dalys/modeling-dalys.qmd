@@ -1448,35 +1448,17 @@ YLL <-
 DALY <- 
     map2(YLL,YLD,~(.x + .y))
 
-# QALY-LIKE DALY
-qaly_daly_ = with(params1,(matrix(c(0,
-               (dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t))) ,
-              0,
-              1),
-            dimnames = list(c(
-                c(tr_names,ab_names)
-            ), c("DW")))
-))
-
-
-QALY_DALYt <- trace1 %>% map( ~ ({
-    tmp = as.matrix(.x) %*% qaly_daly_
-    tmp 
-}))
-
-QALY_DALY = QALY_DALYt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
-
-result1 <- cbind(LE, YLD, YLL, DALY, QALY_DALY) %>%
+result1 <- cbind(LE, YLD, YLL, DALY) %>%
   as.data.frame() %>%
   mutate_all( ~ as.numeric(.))  %>%
   rownames_to_column(var = "strategy") %>%
   mutate(approach = "Markov Trace") %>%
   mutate(LE_LT = lt %>% filter(age == params1$age0) %>% pull(ex)) %>%
   mutate(LE_LT = ifelse(strategy != "natural_history", NA, LE_LT)) %>%
-  dplyr::select(approach, strategy, LE_LT, LE, YLD, YLL, DALY, QALY_DALY) 
+  dplyr::select(approach, strategy, LE_LT, LE, YLD, YLL, DALY) 
 
 result1 %>% 
-    kable(digits = 3, col.names = c("Approach","Scenario","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs","QALY-like DALY")) %>% 
+    kable(digits = 3, col.names = c("Approach","Scenario","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
     kable_styling()
 ```
 
@@ -1664,31 +1646,12 @@ YLL2 <-
 DALY2 <- 
     map2(YLL2,YLD,~(.x + .y))
 
-# QALY-LIKE DALY
-qaly_daly_ = with(params1,(matrix(c(0,
-               (dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t))) ,
-              0,
-              1),
-            dimnames = list(c(
-                c(tr_names,ab_names)
-            ), c("DW")))
-))
-
-
-QALY_DALYt2 <- trace1 %>% map( ~ ({
-    tmp = as.matrix(.x) %*% qaly_daly_
-    tmp 
-}))
-
-QALY_DALY2 = QALY_DALYt2 %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
-
-
-result2 <- cbind(LE2, YLD2,YLL2,DALY2,QALY_DALY2) %>%
+result2 <- cbind(LE2, YLD2,YLL2,DALY2) %>%
     as.data.frame() %>%
     mutate_all(~as.numeric(.))  %>%
     rownames_to_column(var="strategy") %>%
     mutate(approach = "Transition States") %>%
-    dplyr::select(approach, strategy, LE = LE2, YLD=YLD2, YLL=YLL2, DALY=DALY2,QALY_DALY=QALY_DALY2)
+    dplyr::select(approach, strategy, LE = LE2, YLD=YLD2, YLL=YLL2, DALY=DALY2)
 
 tib <- result1 %>%
     bind_rows(result2)
@@ -1696,7 +1659,7 @@ tib <- result1 %>%
 tib %>%
     arrange(strategy) %>%
     select(-strategy) %>%
-    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs","DALY-like QALY")) %>% 
+    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
     kable_styling() %>% 
     pack_rows(index = c("natural_history" = 2, "prevention" = 2, "treatment" = 2,"prevent_treat" = 2)) %>%
     kable_styling()
@@ -1969,10 +1932,6 @@ remaining_life_expectancy <- with(params3,(1/r_ann) * (1 - exp(-r_ann * fExR(age
 YLL3_ <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy, disc = disc[-length(disc)])
 DALY3_ <- map2(YLL3_,YLD3_,~(.x+.y))
 
-qaly_daly_ <- rep(1,length(params3$ages))
-QALY_DALY3_YLL_ <- params3 %>% healthy_longevity_occupancy(H = H, V = V_LE)
-QALY_DALY3_ <- map2(QALY_DALY3_YLL_,YLD3_,~(.x+.y))
-
 LE3 <- LE3_ %>% map(~({
   tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
   tmp[1,1]
@@ -1998,20 +1957,12 @@ DALY3 <- DALY3_ %>% map(~({
   tmp[1,1]
 }))
 
-QALY_DALY3 <- QALY_DALY3_ %>% map(~({
-  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
-  tmp[1,1]
-}))
-
-
-QALY_DALY3 = QALY3 %>% map(~(NA))
-
-result3 <- cbind(LE3, YLD3,YLL3,DALY3,QALY_DALY3) %>%
+result3 <- cbind(LE3, YLD3,YLL3,DALY3) %>%
     as.data.frame() %>%
     mutate_all(~as.numeric(.))  %>%
     rownames_to_column(var="strategy") %>%
     mutate(approach = "Markov Chain With Rewards") %>%
-    dplyr::select(approach, strategy, LE = LE3, YLD=YLD3, YLL=YLL3, DALY=DALY3,QALY_DALY=QALY_DALY3)
+    dplyr::select(approach, strategy, LE = LE3, YLD=YLD3, YLL=YLL3, DALY=DALY3)
 
 tib <- result1 %>%
     bind_rows(result2) %>% 
@@ -2020,105 +1971,10 @@ tib <- result1 %>%
 tib %>%
     arrange(strategy) %>%
     select(-strategy) %>%
-    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs","DALY-like QALY")) %>% 
+    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
     kable_styling() %>% 
     pack_rows(index = c("natural_history" =3, "prevention" = 3, "treatment" = 3,"prevent_treat" = 3)) %>%
     kable_styling()
-
-
-
-```
-
-```{r table-diff-daly}
-#| code-fold: true
-#| code-summary: DALY changes
-#| tbl-cap: Disability-Adjusted Life Year Outcome Changes Relative to Natural History Model
-
-tib %>% 
-    gather(outcome,value,-approach,-strategy) %>% 
-    na.omit() %>% 
-    unite(outcome,outcome,strategy) %>% 
-    spread(outcome,value) %>% 
-    select(approach,starts_with("DALY")) %>% 
-    mutate(DALY_prevent = DALY_prevent - DALY_natural_history,
-           DALY_treat = DALY_treat - DALY_natural_history,
-           DALY_prevent_treat = DALY_prevent_treat - DALY_natural_history) %>% 
-    select(approach, DALY_natural_history, DALY_prevent, DALY_treat, DALY_prevent_treat) %>% 
-    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Markov Chain With Rewards"))) %>% 
-    arrange(approach) %>% 
-    kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment","incDALY Prevention and Treatment")) %>% 
-    kable_styling()
-```
-
-```{r table-diff-qaly-daly}
-#| code-fold: true
-#| code-summary: DALY changes, contd
-#| tbl-cap: Disability-Adjusted Life Year Outcome Changes Relative to Natural History Model
-
-tib %>% 
-    gather(outcome,value,-approach,-strategy) %>% 
-    na.omit() %>% 
-    unite(outcome,outcome,strategy) %>% 
-    spread(outcome,value) %>% 
-    select(approach,starts_with("QALY_DALY")) %>% 
-    mutate(QALY_DALY_prevent = QALY_DALY_prevent - QALY_DALY_natural_history,
-           QALY_DALY_treat = QALY_DALY_treat - QALY_DALY_natural_history,
-           QALY_DALY_prevent_treat = QALY_DALY_prevent_treat - QALY_DALY_natural_history) %>% 
-    select(approach, QALY_DALY_natural_history, QALY_DALY_prevent, QALY_DALY_treat, QALY_DALY_prevent_treat) %>% 
-    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Healthy Longevity"))) %>% 
-    arrange(approach) %>% 
-    kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment","incDALY Prevention and Treatment")) %>% 
-    kable_styling()
-```
-
-```{r table-diff-qaly}
-#| code-fold: true
-#| code-summary: QALY plot
-#| tbl-cap: Quality Adjusted Life Year Outcome Changes Relative to Natural History Model
-
-tibble(approach = rep("Markov Trace",4), strategy=names(unlist(QALY)),  QALY = unlist(QALY)) %>% 
-  bind_rows(
-    tibble(approach = rep("Transition States",4), strategy=names(unlist(QALY2)),  QALY = unlist(QALY2))
-  ) %>% 
-  bind_rows(
-    tibble(approach = rep("Healthy Longevity",4), strategy = names(unlist(QALY2)), QALY = c(QALY3$natural_history[1],QALY3$prevent[1],QALY3$treat[1],QALY3$prevent_treat[1]))
-  ) %>% 
-  mutate(outcome = glue("QALY_{strategy}")) %>% 
-  rename(value = QALY) %>% 
-  select(approach,outcome,value) %>% 
-  spread(outcome,value) %>% 
-  mutate(  QALY_prevent = QALY_prevent - QALY_natural_history,
-           QALY_treat = QALY_treat - QALY_natural_history,
-           QALY_prevent_treat = QALY_prevent_treat - QALY_natural_history) %>% 
-    select(approach, QALY_natural_history, QALY_prevent, QALY_treat, QALY_prevent_treat) %>% 
-    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Healthy Longevity"))) %>% 
-    arrange(approach) %>% 
-    kable(digits = 3, col.names = c("Approach","QALY (ref.)", "incQALY Prevention","incQALY Treatment","incQALY Prevention and Treatment")) %>% 
-    kable_styling()
-
-```
-
-## DALys Based on Endogenous Life Expectancy
-
-$$
-\tilde{\eta}_1^T = 1^T_{\tau_\omega} \tilde{N}
-$$
-
-```{r endogenous}
-#| code-fold: true
-#| code-summary: DALYs based on endogenous life expectancy
-
-N = with(params3,({
-  mUtilde %>% map(~({
-    solve(diag(tau*omega)-.x)
-  }))
-}))
-
-remaining_life_expectancy_endogenous = as.vector(t(rep(1,params3$tau*params3$omega)) %*% N[[1]]) %>% {.[seq(1,params3$tau*params3$omega,2)]}
-YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
-
-remaining_life_expectancy_endogenous <- LE3 %>% map(~({.x[seq(1,params3$tau*params3$omega,2)]})) %>% {.$natural_history}
-YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
 ```
 
 ## DALYs by Year
@@ -2169,7 +2025,135 @@ p3 = DALY3_ %>% map(~({
 
 
 p3 + p1  / p2
+```
+
+# DALYs Based on Endogenous Life Expectancy
+
+```{r calc-endogenous}
+#| code-fold: true
+#| code-summary: Calculate Endogenous DALYs
+
+# QALY-LIKE DALY
+qaly_daly_ = with(params1,(matrix(c(0,
+               (dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t))) ,
+              0,
+              1),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
 
 
+QALY_DALYt <- trace1 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% qaly_daly_
+    tmp
+}))
+
+QALY_DALY = QALY_DALYt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
+
+```
+
+```{r endogenous}
+#| code-fold: true
+#| code-summary: DALYs based on endogenous life expectancy
+
+N = with(params3,({
+  mUtilde %>% map(~({
+    solve(diag(tau*omega)-.x)
+  }))
+}))
+
+remaining_life_expectancy_endogenous = as.vector(t(rep(1,params3$tau*params3$omega)) %*% N[[1]]) %>% {.[seq(1,params3$tau*params3$omega,2)]}
+YLL3_endogenous_ <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
+
+remaining_life_expectancy_endogenous <- LE3 %>% map(~({.x[seq(1,params3$tau*params3$omega,2)]})) %>% {.$natural_history}
+YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
+
+DALY3_endogenous_ <- map2(YLL3_endogenous_,YLD3_,~(.x+.y))
+
+DALY3_endogenous <- DALY3_endogenous_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1]
+}))
+
+result4 <- cbind(DALY3_endogenous) %>%
+    as.data.frame() %>%
+    mutate_all(~as.numeric(.))  %>%
+    rownames_to_column(var="strategy") %>%
+    mutate(approach = "Markov Chain With Rewards - Endogenous") %>%
+    dplyr::select(approach, strategy, DALY=DALY3_endogenous) %>% 
+  bind_rows(
+     cbind(QALY_DALY) %>%
+      as.data.frame() %>%
+      mutate_all(~as.numeric(.))  %>%
+      rownames_to_column(var="strategy") %>%
+      mutate(approach = "Markov Trace - QALY-like DALY") %>%
+      dplyr::select(approach, strategy, DALY=QALY_DALY)
+  )
+
+tib <- result1 %>%
+    bind_rows(result2) %>% 
+  bind_rows(result3) %>% 
+  bind_rows(result4)
+
+tib %>%
+    arrange(strategy) %>%
+    select(-strategy) %>%
+    kable(digits = 3, col.names = c("Approach","Life Expectancy (Life Table)","Life Expectancy (Model)","YLDs","YLLs","DALYs")) %>% 
+    kable_styling() %>% 
+    pack_rows(index = c("natural_history" =5, "prevention" = 5, "treatment" = 5,"prevent_treat" = 5)) %>%
+    kable_styling()
+```
+
+
+# Incremental Outcomes
+
+```{r table-diff-daly}
+#| code-fold: true
+#| code-summary: DALY changes
+#| tbl-cap: Disability-Adjusted Life Year Outcome Changes Relative to Natural History Model
+#| eval: false
+#| 
+tib %>% 
+    gather(outcome,value,-approach,-strategy) %>% 
+    na.omit() %>% 
+    unite(outcome,outcome,strategy) %>% 
+    spread(outcome,value) %>% 
+    select(approach,starts_with("DALY")) %>% 
+    mutate(DALY_prevent = DALY_prevent - DALY_natural_history,
+           DALY_treat = DALY_treat - DALY_natural_history,
+           DALY_prevent_treat = DALY_prevent_treat - DALY_natural_history) %>% 
+    select(approach, DALY_natural_history, DALY_prevent, DALY_treat, DALY_prevent_treat) %>% 
+    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Markov Chain With Rewards"))) %>% 
+    arrange(approach) %>% 
+    kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment","incDALY Prevention and Treatment")) %>% 
+    kable_styling()
+```
+
+```{r table-diff-qaly}
+#| code-fold: true
+#| code-summary: QALY plot
+#| tbl-cap: Quality Adjusted Life Year Outcome Changes Relative to Natural History Model
+#| eval: false
+#| 
+tibble(approach = rep("Markov Trace",4), strategy=names(unlist(QALY)),  QALY = unlist(QALY)) %>% 
+  bind_rows(
+    tibble(approach = rep("Transition States",4), strategy=names(unlist(QALY2)),  QALY = unlist(QALY2))
+  ) %>% 
+  bind_rows(
+    tibble(approach = rep("Healthy Longevity",4), strategy = names(unlist(QALY2)), QALY = c(QALY3$natural_history[1],QALY3$prevent[1],QALY3$treat[1],QALY3$prevent_treat[1]))
+  ) %>% 
+  mutate(outcome = glue("QALY_{strategy}")) %>% 
+  rename(value = QALY) %>% 
+  select(approach,outcome,value) %>% 
+  spread(outcome,value) %>% 
+  mutate(  QALY_prevent = QALY_prevent - QALY_natural_history,
+           QALY_treat = QALY_treat - QALY_natural_history,
+           QALY_prevent_treat = QALY_prevent_treat - QALY_natural_history) %>% 
+    select(approach, QALY_natural_history, QALY_prevent, QALY_treat, QALY_prevent_treat) %>% 
+    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Healthy Longevity"))) %>% 
+    arrange(approach) %>% 
+    kable(digits = 3, col.names = c("Approach","QALY (ref.)", "incQALY Prevention","incQALY Treatment","incQALY Prevention and Treatment")) %>% 
+    kable_styling()
 
 ```
