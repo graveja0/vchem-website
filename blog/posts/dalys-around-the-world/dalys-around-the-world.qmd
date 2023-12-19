@@ -126,20 +126,65 @@ tibble::tribble(
 
 # Introduction
 
-Our objective here is to construct a decision model using data and parameters from the 2019 Global Burden of Disease study. 
+Our objective is to construct a decision model using data and parameters from the [2019 Global Burden of Disease study](https://www.healthdata.org/research-analysis/gbd). 
 
-```{r}
+We will consider three methods for calculation of outcomes.:
+
+1. A **Markov Trace-Based** approach that separately tracks deaths from disease and from other non-disease-related causes, and uses differences in disease-related deaths across cycles to calculate years of life lost to disease (YLLs).
+2. A **Transition States** approach that is similar to Markov trace approach, but that draws on a death tracking state to calculate YLLs.
+3. A **Markov Chain with Rewards** approach to Healthy Longevity as developed in @caswell2018 and @caswell2021. 
+
+
+```{r state-diagrams}
+#| echo: false
+#| 
+# digraph G {
+#     layout = neato;
+#     Healthy [pos="0,0!"];
+#     CVD [pos="1,1!"];
+#     Dead [pos="1,-1!"]
+#     Healthy -> Healthy ;
+#     CVD -> CVD;
+#     Healthy -> CVD [label=""];
+#     CVD -> Dead [label="" ];
+#     Healthy -> Dead [label=""];
+#     Dead -> Dead;
+#   }
+
+# digraph G {
+#     layout = neato;
+#     Healthy [pos="0,0!"];
+#     CVD [pos="1,1!"];
+#     "Dead\n(CVD)" [pos="2,0!"]
+#     "Dead\n(Non-CVD)" [pos="1,-1!"]
+#     Healthy -> Healthy ;
+#     CVD -> CVD;
+#     CVD -> "Dead\n(CVD)" [label = "" labeldistance=1]
+#     Healthy -> CVD [label=""];
+#     CVD -> "Dead\n(Non-CVD)" [label=""];
+#     Healthy -> "Dead\n(Non-CVD)" [label=""];
+#     "Dead\n(Non-CVD)" -> "Dead\n(Non-CVD)" ;
+#     "Dead\n(CVD)" -> "Dead\n(CVD)"
+# }
+
+
+```
+
+Our model will be flexibly parameterized such that practitioners can model any disease or country/region represented in the GBD data. For our purposes here, however, we will focus on a general cardiovascular disease model for the United Kingdom, and using country mortality data for 2019. We will also focus on a pooled model for the full population---though the GBD data do allow us to separately model mortality and disease-specific incidence and death separately for males and females.
+
+A state ("bubble") diagram of our basic model structure is provided below:
+
+![State Diagram for Cardiovascular Disease Model](media/healthy-cvd-dead.png){fig-align="center"}
+
+```{r global-parameters}
 #| code-fold: false
 #| echo: true
 life_table_year = 2019 
 location = "United Kingdom"
 cause_id = 491 # CVD
-radix = 100000 
 sex = "Both"
-rr_deathCVD = 1.1
-rr_incidence = 0.75
+radix = 100000 
 ```
-
 
 # Data Sources
 
@@ -154,7 +199,7 @@ rr_incidence = 0.75
 
 # Population Data
 
-```{r}
+```{r download-population-data}
 #| code-fold: true
 #| code-summary: Download and process GBD incidence data
 
@@ -209,11 +254,9 @@ df_population <- read_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd
 
 The GBD life table data are arranged by age group, so we need to download a separate file for each group, and extract the relevant location and year.
 
-```{r}
+```{r construct-life-table}
 #| code-fold: true
 #| code-summary: Download and process GBD life table data. 
-
-
 
 if (!file.exists(here(glue("blog/posts/dalys-around-the-world/_data/gbd_life_table_{location}-{life_table_year}.rds")))) {
     gbd_life_tables <- c(
@@ -323,7 +366,7 @@ df_life_table = read_rds(here(glue("blog/posts/dalys-around-the-world/_data/gbd_
 
 ### Life Tables
 
-```{r}
+```{r generate-life-table}
 lt <- 
     df_life_table %>% 
     select(location_name,location_id,life_table) %>% 
@@ -645,7 +688,7 @@ tibble::tribble(
 
 # Parameterize Model
 
-```{r}
+```{r parameterize}
 # Parameterize
 
 params <- list(
@@ -663,7 +706,7 @@ params <- list(
     horizon = 120,  
     r_ann = 1e-6,
     Delta_t = 1,
-    age0 = 50,
+    age0 = 0,
     s0T = c(1,0,0,0),
     
     uCVD = 0.773,
@@ -679,6 +722,10 @@ params <- list(
     
     hr_treat = 0.85,
     hr_prevent = 0.9,
+    
+    # GBD Calibration parameters (helps calibrate to reported prevalence by age)
+    rr_deathCVD = 1.1,
+    rr_incidence = 0.75,
     
     cycle_correction = "half-cycle",
     
@@ -736,10 +783,9 @@ params$ages <- params$ages[-length(params$ages)]
 
 ### Disease Incidence
 
-```{r}
+```{r age-dependent-incidence}
 #| code-fold: true
 #| code-summary: Age-dependent incidence rate function
-
 
 rH_CVD <- function(aa,gg = "Both") {
   df_gbd %>% 
@@ -757,14 +803,14 @@ rH_CVD <- function(aa,gg = "Both") {
     setkey(.,age) %>% 
     {.[data.table(age=aa) %>% setkey(.,age),roll="nearest"]} %>% 
     pull(cvd_incidencepop) %>% 
-    {. * rr_incidence}
+    {. * params$rr_incidence}
 }
 
 ```
 
 ### Mortality
 
-```{r}
+```{r parametric-mortality}
 fit_mort <- function(params, mortality_model = "HP2", gg = "Both", outcome = "dx_nocvd") {
     with(params,({
         
@@ -824,7 +870,7 @@ disc =
 
 ```
 
-```{r}
+```{r define-rate-functions}
 #| code-fold: true
 #| code-summary: Age-dependent mortality rate function 
 
@@ -843,7 +889,7 @@ rD <- function(aa, gg = "Both") {
       ) %>%
       as.data.table() %>% 
       arrange(age) %>% 
-    mutate(pct_cvd = rr_deathCVD * pct_cvd)
+    mutate(pct_cvd = params$rr_deathCVD * pct_cvd)
   setkey(pct_cvd, age)
   
   lt_cvd_ <-
@@ -886,7 +932,7 @@ setkey(lt, age)
       ) %>%
       as.data.table() %>% 
       arrange(age) %>% 
-      mutate(pct_cvd = rr_deathCVD * pct_cvd)
+      mutate(pct_cvd = params$rr_deathCVD * pct_cvd)
   setkey(pct_cvd, age)
   
   lt_cvd_ <-
@@ -938,7 +984,7 @@ rCVD_D_p = function(aa,params) {
 
 # Approach 1: Markov Trace
 
-```{r}
+```{r params1}
 #| cache: true
 #| 
 
@@ -958,19 +1004,6 @@ params1 <- with(params,modifyList(params,list(
           dimnames = list(c(tr_names,ab_names),
                           c(tr_names,ab_names)
           ))
-        
-        # mR_nh_p = # Use parametric mortality coefficients rather than life table. 
-        #   matrix(c(
-        #   -(rH_CVD(.x) + rD_p(.x,params = params)), rH_CVD(.x), rD_p(.x,params = params), 0 ,
-        #   0, -(rD_p(.x,params = params)+ rCVD_D_p(.x,params = params)), rD_p(.x,params = params),rCVD_D_p(.x,params = params),
-        #   0,0,0,0,
-        #   0,0,0,0),
-        #   nrow = 4,
-        #   ncol = 4,
-        #   byrow=TRUE,
-        #   dimnames = list(c(tr_names,ab_names),
-        #                   c(tr_names,ab_names)
-        # ))
         
         mR_prevent = 
           matrix(c(
@@ -1027,7 +1060,7 @@ params1 <- with(params1,modifyList(params1,list(
 
 ```
 
-```{r}
+```{r trace1}
 trace1 <- 
     with(params1, {
         mP %>% map( ~ ({
@@ -1050,7 +1083,7 @@ tr <- trace1$natural_history
 
 ## Checkpoint 1: Overall Survival
 
-```{r}
+```{r survival}
 #| fig-cap: Survival Curve
 #| 
 # Check Life Expectancy vs. Life Table
@@ -1085,10 +1118,9 @@ as.matrix(tr) %*% d_ %>% data.frame() %>%
 
 ```
 
-
 ## Checkpoint: CVD Prevalence
 
-```{r}
+```{r prevalence}
 df_prevalence <- 
   tibble::tribble(
       ~measure_id, ~measure_name, ~location_id,   ~location_name, ~sex_id, ~sex_name, ~age_id,     ~age_name, ~cause_id,               ~cause_name, ~metric_id, ~metric_name, ~year,        ~val,      ~upper,      ~lower,
@@ -1134,8 +1166,7 @@ as.matrix(tr) %>%
 
 ```
 
-
-```{r}
+```{r outcomes1}
 # Life Expectancy (Non-Discounted)
 le_ = with(params1,(matrix(c(1,
               1 ,
@@ -1152,6 +1183,24 @@ LEt <- trace1 %>% map( ~ ({
 }))
 
 LE = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) ; LE
+
+
+# Life Expectancy (Non-Discounted)
+qaly_ = with(params1,(matrix(c(uH,
+              uCVD ,
+              0,
+              0),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
+
+QALYt <- trace1 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% qaly_
+    tmp 
+}))
+
+QALY = QALYt %>% map(~sum(.x * disc * gen_wcc(params1$omega, method = params1$cycle_correction))) 
 
 # YLD
 
@@ -1226,7 +1275,7 @@ result1 %>%
 
 # Approach 2: Transition States
 
-```{r}
+```{r parameters2}
 #| cache: true
 params2 <- with(params,modifyList(params,list(
     tr_names = c("Healthy","CVD"), # transient health states
@@ -1310,7 +1359,7 @@ params2 <- with(params2,modifyList(params2,list(
 
 ```
 
-```{r}
+```{r trace2}
 trace2 <- 
     with(params2, {
         mP %>% map( ~ ({
@@ -1330,7 +1379,7 @@ trace2 <-
     }))
 ```
 
-```{r}
+```{r outcomes2}
 # Life Expectancy (Non-Discounted)
 le_ = with(params2,(matrix(c(1,
               1 ,
@@ -1347,6 +1396,24 @@ LEt <- trace2 %>% map( ~ ({
 }))
 
 LE2 = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correction))) ; LE
+
+# Life Expectancy (Non-Discounted)
+qaly_ = with(params2,(matrix(c(uH,
+              uCVD ,
+              0,
+              0),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
+
+QALYt <- trace2 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% qaly_
+    tmp 
+}))
+
+QALY2 = QALYt %>% map(~sum(.x * disc * gen_wcc(params1$omega, method = params1$cycle_correction))) 
+
 
 # YLD
 
@@ -1405,10 +1472,9 @@ tib %>%
     kable_styling()
 ```
 
-
 # Approach 3: Markov Chain with Rewards
 
-```{r}
+```{r parameters3}
 vec <-  # a simple function to return the vec of an array
     function(x) {
         y <- c(x)
@@ -1452,8 +1518,8 @@ params3_ <- with(params,modifyList(params,list(
 )))
 ```
 
-```{r}
-#| cache: false
+```{r parameters3-contd}
+#| cache: true
 
 params3_ <- with(params3_,modifyList(params3_,list(
     # Natural History Transition Rate Matrix
@@ -1590,8 +1656,7 @@ params3 <- with(params3,modifyList(params3,list(
 )))
 ```
 
-
-```{r}
+```{r outcomes3}
 healthy_longevity_occupancy <- function(params, H, V) {
     with(params,{
         map2(mUtilde,mPtilde,~({
@@ -1661,8 +1726,13 @@ V_LE = with(params3,matrix(1,nrow=tau, ncol = omega))
 V_YLD = with(params3,matrix(0,nrow=tau, ncol = omega))
 V_YLD[2,] <- disc[-length(disc)]*with(params3,dw * Delta_t * (1/r_Delta_t) * (1 - exp(-r_Delta_t)))
 
+V_QALY = with(params3,matrix(0,nrow=tau, ncol = omega))
+V_QALY[1,] <- disc[-length(disc)]*with(params3,uH)
+V_QALY[2,] <- disc[-length(disc)]*with(params3,uCVD)
+
 LE3 <- params3 %>% healthy_longevity_occupancy(H = H, V = V_LE)
 YLD3 <- params3 %>% healthy_longevity_occupancy(H = H, V = V_YLD)
+QALY3 <- params3 %>% healthy_longevity_occupancy(H = H, V = V_QALY)
 
 remaining_life_expectancy <- with(params3,(1/r_ann) * (1 - exp(-r_ann * fExR(ages))))
 
@@ -1693,10 +1763,10 @@ tib %>%
     pack_rows(index = c("natural_history" = 3, "prevention" = 3, "treatment" = 3,"prevent_treat" = 3)) %>%
     kable_styling()
 
+
 ```
 
-
-```{r}
+```{r table-diff-daly}
 tib %>% 
     gather(outcome,value,-approach,-strategy) %>% 
     unite(outcome,outcome,strategy) %>% 
@@ -1712,3 +1782,84 @@ tib %>%
     kable_styling()
 ```
 
+```{r table-diff-qaly}
+tibble(approach = rep("Markov Trace",4), strategy=names(unlist(QALY)),  QALY = unlist(QALY)) %>% 
+  bind_rows(
+    tibble(approach = rep("Transition States",4), strategy=names(unlist(QALY2)),  QALY = unlist(QALY2))
+  ) %>% 
+  bind_rows(
+    tibble(approach = rep("Healthy Longevity",4), strategy = names(unlist(QALY2)), QALY = c(QALY3$natural_history[1],QALY3$prevent[1],QALY3$treat[1],QALY3$prevent_treat[1]))
+  ) %>% 
+  mutate(outcome = glue("QALY_{strategy}")) %>% 
+  rename(value = QALY) %>% 
+  select(approach,outcome,value) %>% 
+  spread(outcome,value) %>% 
+  mutate(  QALY_prevent = QALY_prevent - QALY_natural_history,
+           QALY_treat = QALY_treat - QALY_natural_history,
+           QALY_prevent_treat = QALY_prevent_treat - QALY_natural_history) %>% 
+    select(approach, QALY_natural_history, QALY_prevent, QALY_treat, QALY_prevent_treat) %>% 
+    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Healthy Longevity"))) %>% 
+    arrange(approach) %>% 
+    kable(digits = 3, col.names = c("Approach","QALY (ref.)", "incQALY Prevention","incQALY Treatment","incQALY Prevention and Treatment")) %>% 
+    kable_styling()
+
+```
+
+## Endogenous Life Expectancy
+$$
+\tilde{\eta}_1^T = 1^T_{\tau_\omega} \tilde{N}
+$$
+
+```{r}
+N = with(params3,({
+  mUtilde %>% map(~({
+    solve(diag(tau*omega)-.x)
+  }))
+  
+}))
+
+remaining_life_expectancy_endogenous = as.vector(t(rep(1,params3$tau*params3$omega)) %*% N[[1]]) %>% {.[seq(1,params3$tau*params3$omega,2)]}
+YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
+YLL3_endogenous %>% map(~(.x[1]))
+
+remaining_life_expectancy_endogenous <- LE3 %>% map(~({.x[seq(1,params3$tau*params3$omega,2)]})) %>% {.$natural_history}
+YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
+YLL3_endogenous %>% map(~(.x[1]))
+
+```
+
+
+## DALYs by Year
+
+```{r}
+
+YLL3 %>% map(~({
+  as.data.frame(as.matrix(.x)) %>% mutate(age = sort(rep(params3$ages,2))) %>% 
+  mutate(initial = rep(params3$tr_names,params3$omega))
+})) %>% 
+  set_names(params3$tx_names) %>% 
+  bind_rows(.id = "strategy") %>% 
+  ggplot(aes(x = age, y = V1, colour = initial, lty=strategy)) + geom_line() + theme_ipsum() + 
+  scale_colour_aaas()
+```
+
+
+```{r}
+
+YLL3 %>% map(~({
+  as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
+  mutate(age = params3$ages)  %>% 
+  mutate(initial = params3$tr_names[1])
+})) %>% 
+  set_names(params3$tx_names) %>% 
+  bind_rows(.id = "strategy") %>% 
+  ggplot(aes(x = age, y = V1, colour = initial, lty=strategy)) + geom_line() + theme_ipsum() + 
+  scale_colour_aaas()
+
+# Technically this gives the YLL outcome we shoudl report above. 
+YLL3 %>% map(~({
+  (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+}))
+
+
+```

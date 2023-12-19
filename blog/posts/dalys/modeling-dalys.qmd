@@ -42,11 +42,11 @@ Sources: @caswell2018 and @caswell2021
 #     Dead [pos="3.5,0!"];
 #     Dead:e -> Dead:e;
 #     Sick:w -> Sick:w;
-#     Sicker:e -> Sicker:e; 
-#     Healthy -> Sick [label="\nrHS1"]; 
-#     Healthy -> Dead [label="rD"]; 
+#     Sicker:e -> Sicker:e;
+#     Healthy -> Sick [label="\nrHS1"];
+#     Healthy -> Dead [label="rD"];
 #     Sick -> Sicker [label="rS1S2"];
-#     Sicker -> Dead:s [label="   rS2D + rD"]; 
+#     Sicker -> Dead:s [label="   rS2D + rD"];
 #     Sick -> Dead [label="rS1D + rD"];
 # }
 
