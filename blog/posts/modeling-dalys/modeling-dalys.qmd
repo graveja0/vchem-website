@@ -227,55 +227,6 @@ specific datasets used are provided in @tbl-datasource.
 
 # Process GBD Data
 
-## Country Population Data
-
-```{r download-population-data}
-#| code-fold: true
-#| code-summary: Download and process GBD incidence data
-
-if (!file.exists(here(glue("blog/posts/modeling-dalys/_data/gbd_population_{location}-{life_table_year}.rds")))) {
-  gbd_population <- c("https://ghdx.healthdata.org/sites/default/files/record-attached-files/IHME_GBD_2019_POP_2010_2019_SYA.zip")
-  
-  population <-
-      gbd_population %>% map(~ ({
-        cat(glue::glue("File: {.x}\n"))
-        tmp <- tempfile()
-        tmpdir <- tempdir()
-        download.file(.x, tmp)
-        nn <-
-          gsub(
-            "https://ghdx.healthdata.org/sites/default/files/record-attached-files/",
-            "",
-            .x
-          ) %>% gsub(".ZIP|.zip", "", .)
-        unzip(tmp)
-        ff <- list.files(here(), pattern = ".CSV|.csv")
-        df_pop <- 
-          ff[grep(glue("SYA_{life_table_year}"),ff)] %>% 
-          map(~(read.csv(.x) %>% as_tibble() %>% mutate(file = .x))) %>% pluck(1) %>% 
-          filter(location_name == location & sex_name == tolower(sex)) 
-        file.remove(ff)
-        df_pop 
-      })) %>%
-      bind_rows()
-  
-  df_population <- 
-    population  %>% 
-    select(age_group_name,val) %>% 
-    mutate(age_group_name = ifelse(age_group_name=="<1 year","0",age_group_name))  %>% 
-    mutate(age_group_name = ifelse(age_group_name=="95 plus","95",age_group_name))  %>% 
-    mutate(age_name = as.numeric(paste0(age_group_name))) %>% 
-    mutate(age_name = cut(age_name,labels = lut_age_incidence$age_name, right = FALSE,breaks = c(0,1,seq(5,95,5),110))) %>% 
-    group_by(age_name) %>% 
-    summarise(population=sum(val)) %>% 
-    left_join(lut_age_incidence,"age_name")
-  
-  
-  df_population %>% write_rds(here(glue("blog/posts/modeling-dalys/_data/gbd_population_{location}-{life_table_year}.rds")))
-} 
-
-df_population <- read_rds(here(glue("blog/posts/modeling-dalys/_data/gbd_population_{location}-{life_table_year}.rds")))
-```
 
 ## Construct a Cause-Deleted Life Table
 
@@ -777,7 +728,7 @@ tibble::tribble(
 #| tbl-cap: GBD Cause-of-Death Data
 #| label: tbl-gbd-cause-of-death
 #| code-fold: true
-#| code-summary: GBD Cause of Death Data Table
+#| code-summary: GBD Cause of Death (CVD) Data Table
 
 df_gbd %>% 
   filter(sex_name=="Both") %>% 
@@ -793,7 +744,7 @@ df_gbd %>%
 #| tbl-cap: GBD CVD Incidence Rate Data
 #| label: tbl-gbd-incidence-rate
 #| code-fold: true
-#| code-summary: GBD Incidence Rate (per 100k population) Data Table
+#| code-summary: CVD Incidence Rate (per 100k population) Data Table
 
 df_gbd %>% 
   filter(sex_name=="Both") %>% 
@@ -805,9 +756,11 @@ df_gbd %>%
   kable_styling()
 ```
 
+
+
 # Parameterize Model
 
-Our next step is to parameterize the model.
+Our next step is to parameterize the model. Note that for the matrix calculus method (Approach 3) we need to separately track transient (Healthy, CVD) and absorbing (background mortality, cause-specific mortality) health states, so we do that in the parameters here. 
 
 ```{r parameterize}
 # Parameterize
@@ -824,7 +777,7 @@ params <- list(
     df_gbd = df_gbd,  # disease incidence and cause-of-death data
     life_table = lt,  # overall life table
     
-    horizon = 120,    # model time horizon (in years)  
+    horizon = 110,    # model time horizon (in years)  
     r_ann = 1e-6,     # annual discount rate
     Delta_t = 1,      # time step (1 = yearly, 1/12 = monthly, etc.)
     age0 = 0,         # initial age in model
@@ -925,9 +878,7 @@ rH_CVD <- function(aa,gg = "Both") {
     mutate(age_diff = ifelse(age==95,5,age_diff)) %>% 
     mutate_at(vars(contains("incidence")),function(x) x) %>% 
     as.data.table() %>% 
-    left_join(df_population,"age") %>% 
-    mutate(cvd_incidencepop = cvd_incidence * population / 100000) %>% 
-    mutate(cvd_incidencepop = cvd_incidencepop/population) %>% 
+    mutate(cvd_incidencepop = cvd_incidence / 100000) %>% 
     setkey(.,age) %>% 
     {.[data.table(age=aa) %>% setkey(.,age),roll="nearest"]} %>% 
     pull(cvd_incidencepop) %>% 
@@ -1666,6 +1617,72 @@ tib %>%
 ```
 
 # Approach 3: Markov Chain with Rewards
+
+Our results can be summarised in a step-by-step protocol for calculations of healthy longevity.
+
+1. Start with the transition matrices $\mathbf{U}_{x}(x=1, \ldots, \omega)$, the age advancement matrices $\mathbf{D}_{j}(j=1, \ldots, s)$, and the mortality matrices $\mathbf{M}_{i}(i=1, \ldots, \omega)$.
+2. Construct the block-structured age $\times$ stage-classified matrices $\tilde{\mathbf{U}}, \tilde{\mathbf{M}}$, and $\tilde{\mathbf{P}}$ following equations (9), (10), and (11).
+3. To calculate healthy longevity ...
+
+... as lifetime occupancy of health stages, go to 4.
+
+... as lifetime number of transitions among health stages, go to 5.
+
+... as the value of lifetime occupancy of health stages, go to 6 .
+
+... as the value of lifetime transitions among health stages, go to 7 .
+
+4. Healthy longevity as occupancy:
+
+(a) Create the array $\mathbf{H}$ in Figure 2. Insert 1 in the ages and health stages of interest.
+
+(b) Create the reward vector $\mathbf{h}$ by applying the vec operator to $\mathbf{H}$, as in (27).
+
+(c) Create the matrices $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ following (30) and (31).
+
+(d) Create the matrix of occupancy rewards $\tilde{\mathbf{R}}_{1}$ from $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ using equation (12).
+
+(e) Create the higher moment reward matrices $\tilde{\mathbf{R}}_{2}, \tilde{\mathbf{R}}_{3}, \ldots$ using (34).
+
+(f) Go to 8 .
+
+5. Healthy longevity as the number of transitions:
+
+(a) For each age $x$ of interest, specify the set $\mathcal{T}_{x}$ of transitions to count.
+
+(b) Construct the indicator matrices $\mathbf{B}_{1}^{(x)}$ and $\mathbf{C}_{1}^{(x)}$ using (38) and (39).
+
+(c) Construct the block-structured matrices $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ using (41) and (43).
+
+(d) Assemble the matrix $\tilde{\mathbf{R}}_{1}$ as in (12).
+
+(e) Create the higher moment reward matrices $\tilde{\mathbf{R}}_{2}, \tilde{\mathbf{R}}_{3}, \ldots$ using (34).
+
+(f) Go to 8 .
+
+6. Healthy longevity as the value of occupancy:
+
+(a) Assign values to occupancy of each age-stage combination in matrices $\mathbf{V}_{m}$, for each moment $m$ of interest, according to (44).
+
+(b) Create the moment vectors $\mathbf{v}_{m}$ by applying the vec operator to $\mathbf{V}_{m}$, as in (45).
+
+(c) Create the block-structured matrices $\tilde{\mathbf{B}}_{m}$ and $\tilde{\mathbf{C}}_{m}$ as in (47) and (48).
+
+(d) Create the block-structured reward matrices $\tilde{\mathbf{R}}_{m}$ as in (12).
+
+(e) Go to 8 .
+
+7. Healthy longevity as the value of transitions:
+
+(a) For each age $x$, obtain the moments of the value of each transition in $\mathcal{T}_{x}$.
+
+(b) For each age $x$ and each moment $m$, create the matrices $\mathbf{B}_{m}^{(x)}$ and $\mathbf{C}_{m}^{(x)}$ according to (49) and (50).
+
+(c) Construct the block-structured matrices $\tilde{\mathbf{B}}_{m}$ and $\tilde{\mathbf{C}}_{m}$ using (41) and (43) and assemble the matrices $\tilde{\mathbf{R}}_{m}$ as in (12).
+(d) Go to 8 .
+
+8. Compute the moments of healthy longevity from the transient matrix $\tilde{\mathbf{U}}$, the transition matrix $\tilde{\mathbf{P}}$, and the reward matrices $\tilde{\mathbf{R}}_{m}$, following equations (13) - (15).
+
 
 ```{r parameters3}
 #| code-fold: true
