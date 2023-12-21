@@ -1,5 +1,5 @@
 ---
-title: "Structuring Models for Multidimensional Health Outcomes"
+title: "Structuring Markov Models for Multidimensional Health Outcomes"
 subtitle: "Construction of a Decision-Analytic Markov Model Using Global Burden of Disease Data"
 author: John Graves
 date: "2023-12-15"
@@ -205,7 +205,7 @@ life_table_year = 2019
 location = "United Kingdom"
 cause_id = 491 # CVD
 sex = "Both"
-radix = 100000 
+radix = 100000  # Population basis for the construction of life tables
 ```
 
 # Data Sources
@@ -388,7 +388,7 @@ lt %>% select(-location_id) %>% kable(digits = 3) %>% kable_styling()
 ```
 
 | Parameter | Description                                                                 |
-|------------------|------------------------------------------------------|
+|-------------------|-----------------------------------------------------|
 | ex        | Remaining life expectancy                                                   |
 | qx        | Probability of death in age group                                           |
 | mx        | Death rate in age group                                                     |
@@ -763,6 +763,15 @@ calculus method (Approach 3) we need to separately track transient
 (Healthy, CVD) and absorbing (background mortality, cause-specific
 mortality) health states, so we do that in the parameters here.
 
+We will structure our model to consider outcomes under four different
+strategies:
+
+1.  A **natural history** model that captures the status quo.
+2.  A **prevention** strategy that reduces CVD incidence.
+3.  A **treatment** strategy that reduces CVD-related death.
+4.  A **prevention and treatment** strategy that combines (2) and (3)
+    above.
+
 ```{r parameterize}
 # Parameterize
 
@@ -871,15 +880,6 @@ tables and other data. A limitation of this approach is that ages are
 grouped into five-year buckets---meaning that the mortality rate will be
 held constant within an age group.
 
-As an alternative option that provides age-specific (i.e., ungrouped)
-rates, we also include a parametric morality model (based on the
-[Heligman-Pollard model, which captures mortality across ages quite
-well](https://www.soa.org/globalassets/assets/library/research/transactions-of-society-of-actuaries/1990-95/1992/january/tsa92v446.pdf)).[^2]
-
-[^2]: To explore more on parametric mortality modeling, see our
-    interactive tutorial
-    [here](https://graves-vanderbilt.shinyapps.io/1-mortality-modeling/#section-construct-a-simple-alive-dead-model).
-
 ```{r age-dependent-incidence}
 #| code-fold: true
 #| code-summary: Age-dependent incidence rate function
@@ -902,6 +902,17 @@ rH_CVD <- function(aa,gg = "Both") {
 }
 
 ```
+
+### Optional: Parametric Mortality
+
+As an alternative option that provides age-specific (i.e., ungrouped)
+rates, we also include a parametric morality model (based on the
+[Heligman-Pollard model, which captures mortality across ages quite
+well](https://www.soa.org/globalassets/assets/library/research/transactions-of-society-of-actuaries/1990-95/1992/january/tsa92v446.pdf)).[^2]
+
+[^2]: To explore more on parametric mortality modeling, see our
+    interactive tutorial
+    [here](https://graves-vanderbilt.shinyapps.io/1-mortality-modeling/#section-construct-a-simple-alive-dead-model).
 
 The leftmost panel in @fig-hp shows the observed vs. fitted
 log(mortality rate) for our population, while the rightmost panel shows
@@ -1658,8 +1669,19 @@ tib %>%
 
 # Approach 3: Healthy Longevity (Markov Chain with Rewards)
 
-We adapt the protocol in @caswell2021 to calculate, YLL, YLD, and DALY
-outcomes using Markov Chain with Rewards approach:
+This approach adapts the protocol in @caswell2021 to calculate, YLL,
+YLD, and DALY outcomes using a Markov chain with rewards. The approach
+is quite math-heavy---though the code provided below is generalized
+enough that it can be adapted for nearly any decision analytic model.
+
+::: {.callout-note appearance="simple"}
+The healthy longevity method proposed by @caswell2021 @caswell2018 are
+quite powerful, allowing for estimation of expected values as well as
+other higher-level moments in an outcome distribution (e.g., variance,
+skewness, etc.). To keep exposition as simple as possible, we focus here
+only on expected values---though note that formulas for calculating
+other moments can be found in the original studies.
+:::
 
 Define
 
@@ -1895,10 +1917,11 @@ $$
 $$
 
 where $\mathbf{K}$ is a permutation matrix known as the vec-permutation
-matrix.[^vecperm] See @henderson1981 and Appendix B in @caswell2021 for further
-information.
+matrix.[^4] See @henderson1981 and Appendix B in @caswell2021 for
+further information.
 
-[^vecperm]: A function to construct a vec-permultation matrix is provided within the code snippet below. 
+[^4]: A function to construct a vec-permultation matrix is provided
+    within the code snippet below.
 
 We also define
 
@@ -1977,125 +2000,36 @@ params3 <- with(params3,modifyList(params3,list(
 
 We now (nearly) have the components needed to calculate outcomes. A key
 difference in the Healthy Longevity approach, relative to the approaches
-above, is that we do not calculate outcomes off a trace. Rather, the method utilizes matrix calculus to solve for
-expected outcomes and other moments in the outcome distribution (e.g., variance, skewness, etc.).[^expected]
+above, is that we do not calculate outcomes off a trace. Rather, the
+method utilizes matrix calculus to solve for *expected outcomes* and
+other moments in the outcome distribution (e.g., variance, skewness,
+etc.).[^5]
 
-[^expected]: For our purposes here we will focus on expected outcomes---though note that formulas for higher-order moments are provided in @caswell2021 and @caswell2018. 
+[^5]: Again, for our purposes here we will focus on expected
+    outcomes---though note that formulas for higher-order moments are
+    provided in @caswell2021 and @caswell2018.
 
 To calculate outcomes, we must next define "reward" matrices
 $\mathbf{R}_m$, where $m$ indexes the moment of interest (e.g., expected
 value, variance, etc.). The structure and values of $\mathbf{R}_m$ will
-differ, however, depending on the outcome. 
+differ, however, depending on the outcome.
 
-To facilitate understanding, we briefly
-classify each of our outcomes (LE, YLL, YLD, DALYs, QALYs) into broad classes corresponding to whether the payoff or "reward" applies to occupancy, or to transitions, within or to a given health state:
+To facilitate how we define rewards (i.e., payoffs), we briefly classify
+each of our outcomes (LE, YLL, YLD, DALYs, QALYs) into broad classes
+corresponding to whether the payoff or "reward" applies to occupancy, or
+to transitions, within or to a given health state:
 
 | Outcome                                   | Reward Class                                                            |
-|-------------------------------------------|-------------------------------------------------------------------------|
+|---------------------------|---------------------------------------------|
 | Life Expectancy                           | Occupancy (1.0 for each alive health state)                             |
 | Years of life lived with disability (YLD) | Occupancy (disability weight applied to time in CVD state)              |
 | Yearls of life lost to disease (YLL)      | Transition (remaining life expectancy applied to CVD death transitions) |
 | Disability-Adjusted Life Years (DALYs)    | Occupancy (YLD) + Transition (YLL)                                      |
-| Quality-Adjusted Life Years               | Occupancy (utility weights applied to alive health states)              |
+| Quality-Adjusted Life Years               | Occupancy (utility weights applied to living health states)             |
 
 : Classification of Health Outcomes
 
-To calculate occupancy-based outcomes, we start with a reward matrix $\mathbf{H}$ (@fig-H-le) 
-
-![Reward matrix $\mathbf{H}$](media/H-LE.png){#fig-H-le fig-align="center" width=50%}
-
-
-Cell values within this matrix can be set to one if we want to "reward" that health state-age combination in our outcome measure, and zero otherwise.[^reward]
-
-[^reward]: This structure allows us, for example, to estimate outcomes for certain age ranges or other decision-relevant combinations of health state and age. 
-
-For remaining life expectancy, we define $\mathbf{H}$ such that each cell receives a value of one. We use this matrix to define the reward vector $\mathbf{h}$:
-
-$$
-\mathbf{h} = \text{vec } \mathbf{H}
-$$
-We also define $\neg \mathbf{h}$ as the complement of $\mathbf{h}$.
-
-Occupancy-based outcomes with partial rewards (e.g., YLDs, QALYs) require an additional matrix $\mathbf{V}$, which has the same structure as $\mathbf{H}$:
-
-If $\mathbf{S}$ is the set of states that receive a reward (e.g., the CVD state for both QALYs and YLDs), then a cycle spent in state $i$ at age $j$ is defined by 
-
-$$
-\mathbf{V}(i, j)= \begin{cases}E\left[v(i, j)\right] & \text { if }(i, j) \in \mathcal{S} \\ 0 & \text { otherwise }\end{cases}
-$$
-For YLD outcomes, $\mathbf{V}$ is defined as shown in @fig-V-yld, while for QALY outcomes $\mathbf{V}$ is defined as shown in @fig-V-qaly .
-
-![Reward matrix for YLD Outcome](media/H-YLD.png){#fig-V-yld fig-align="center" width=70%}
-
-![Reward matrix \mathbf{V} for QALY Outcome](media/H-QALY.png){#fig-V-qaly fig-align="center" width=60%}
-
-We simliarly define an occupancy indicator vector $\mathbf{v}$ just as we did $\mathbf{h}$:
-
-$$
-\mathbf{v}_{m}=\operatorname{vec} \mathbf{V}_{m}
-$$
-
-Like many health economic applications, the Healthy Longevity approach makes assumptions partial occupancy in a health state.[^cyclecorr] Specifically, the approach assumes that partial occupancy in a health state receives half the reward---essentially, we draw on an assumption that mid-cycle transitions occur half-way through. 
-
-We combine this assumption, along with the vectorized reward matrices $\mathbf{h}$ and $\mathbf{v}$ to obtain:
-
-$$
-\begin{aligned}
-\tilde{\mathbf{B}}_{1} & =\mathbf{h} \mathbf{v}_{1}^{\top}+\frac{1}{2}(\neg \mathbf{h})\left(\mathbf{v}_{1}^{\top}\right)+\frac{1}{2}\left(\mathbf{v}_{1}\right)\left(\neg \mathbf{h}^{\top}\right) \\
-\end{aligned}
-$$
-and
-
-$$
-\tilde{\mathbf{C}}_{1}=\frac{1}{2} \mathbf{1}_{\alpha} \mathbf{v_1}^{\top}
-$$
-
-
-
-[^cyclecorr]: For example, half-cycle corrections are often used---though there are other methdos (e.g., Simpson's rule) that are also drawn upon.
-
-We combine $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ to obtain:
-
-$$
-\tilde{\mathbf{R}}_{1}=\left(\begin{array}{c|c}
-\tilde{\mathbf{B}}_{1} & \mathbf{0} \\
-\hline \tilde{\mathbf{C}}_{1} & \mathbf{0}
-\end{array}\right) 
-$$
-which has same block structure as the transition probability matrix $\tilde{\mathbf{P}}$.
-
-Expected outcomes are based on
-
-$$
-\begin{aligned}
-& \tilde{\boldsymbol{\rho}}_{1}=\tilde{\mathbf{N}}^{\top} \mathbf{Z}\left(\tilde{\mathbf{P}} \circ \tilde{\mathbf{R}}_{1}\right)^{\top} \mathbf{1}_{s} 
-\end{aligned}
-$$
-where $\tilde{\mathbf{N}}$ is the fundamental matrix
-
-$$
-\tilde{\mathbf{N}}=(\mathbf{I}-\tilde{\mathbf{U}})^{-1}
-$$
-and $\mathbf{Z}$ is 
-
-$$
-\mathbf{Z}=\left(\mathbf{I}_{\tau \omega} \mid \mathbf{0}_{\tau \omega \times \alpha}\right)
-$$
-
-Total (across all ages) outcomes for each starting health state are calculated as
-
-$$
-\boldsymbol{\rho}_{m}^{\text {stage }}(\operatorname{age} x)=\left(\mathbf{e}_{x}^{\top} \otimes \mathbf{I}_{\tau}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \tau \times 1
-$$
-
-Alternatively, we may wish to calculate outcomes seprately under different starting ages, and for a specified starting health state (e.g., healthy). This is given by
-
-$$
-\boldsymbol{\rho}_{m}^{\text {age }}(\text { stage } i)=\left(\mathbf{I}_{\omega} \otimes \mathbf{e}_{i}^{\top}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \omega \times 1,
-$$
-
-where $\otimes$ is the Kroenecker operator.
-
+### Occupancy-Based Outcomes
 
 ```{r, eval = FALSE}
 #| echo: false
@@ -2127,98 +2061,166 @@ where $\otimes$ is the Kroenecker operator.
 ```
 
 
-Life Expectancy -
+To calculate occupancy-based outcomes, we start with a reward matrix
+$\mathbf{H}$, which has dimensions $\tau \times \omega$ and is
+structured as shown in @fig-H-le:
 
-3.  Life Expectancy
+![Reward matrix $\mathbf{H}$](media/H-LE.png){#fig-H-le
+fig-align="center" width="50%"}
 
-<!-- -->
+Cell values within this matrix can be set to one if we want to "reward"
+that health state-age combination in our outcome measure, and zero
+otherwise.[^6]
 
--   Create the array $\mathbf{H}$.
--   Create the reward vector $\mathbf{h}$ by applying the vec operator
-    to $\mathbf{H}$, i.e.,
-    $\mathbf{h} = \text{vec } \mathbf{H} \quad \tau \omega \times 1$.
--   Create the matrices $\tilde{\mathbf{B}}_{1}$ and
-    $\tilde{\mathbf{C}}_{1}$
--   Create the matrix of occupancy rewards $\tilde{\mathbf{R}}_{1}$ from
-    $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ using equation
-    (12).
--   Create the higher moment reward matrices
-    $\tilde{\mathbf{R}}_{2}, \tilde{\mathbf{R}}_{3}, \ldots$ using (34).
--   Go to 8 .
+[^6]: This structure allows us, for example, to estimate outcomes for
+    certain age ranges or other decision-relevant combinations of health
+    state and age.
 
-<!-- -->
+For occupancy-based outcomes, we define $\mathbf{H}$ such that each cell
+receives a value of one.
 
-5.  Healthy longevity as the number of transitions:
+![Reward matrix $\mathbf{H}$](media/H-LE2.png){#fig-H fig-align="center"
+width="50%"}
 
-<!-- -->
+We use this matrix to define the reward vector $\mathbf{h}$:[^7]
 
-(a) For each age $x$ of interest, specify the set $\mathcal{T}_{x}$ of
-    transitions to count.
+[^7]: The $\text{vec}$ operator stacks the columns of an $m \times n$
+    matrix into a $mn \times 1$ vector.
 
-(b) Construct the indicator matrices $\mathbf{B}_{1}^{(x)}$ and
-    $\mathbf{C}_{1}^{(x)}$ using (38) and (39).
+$$
+\mathbf{h} = \text{vec } \mathbf{H}
+$$ We also define $\neg \mathbf{h}$ as the complement of $\mathbf{h}$,
+(i.e., values of 1.0 become 0, and vice versa).
 
-(c) Construct the block-structured matrices $\tilde{\mathbf{B}}_{1}$ and
-    $\tilde{\mathbf{C}}_{1}$ using (41) and (43).
+Occupancy-based outcomes with partial rewards (e.g., YLDs, QALYs)
+require an additional matrix $\mathbf{V}$, which has the same structure
+as $\mathbf{H}$:
 
-(d) Assemble the matrix $\tilde{\mathbf{R}}_{1}$ as in (12).
+If $\mathbf{S}$ is the set of states that receive a reward (e.g., the
+CVD state for both QALYs and YLDs), then a cycle spent in state $i$ at
+age $j$ is defined by
 
-(e) Create the higher moment reward matrices
-    $\tilde{\mathbf{R}}_{2}, \tilde{\mathbf{R}}_{3}, \ldots$ using (34).
+$$
+\mathbf{V}(i, j)= \begin{cases}E\left[v(i, j)\right] & \text { if }(i, j) \in \mathcal{S} \\ 0 & \text { otherwise }\end{cases}
+$$ For YLD outcomes, $\mathbf{V}$ is defined as shown in @fig-V-yld,
+while for QALY outcomes $\mathbf{V}$ is defined as shown in @fig-V-qaly
+.
 
-(f) Go to 8 .
+![Reward matrix for YLD Outcome](media/H-YLD.png){#fig-V-yld
+fig-align="center" width="70%"}
 
-<!-- -->
+![Reward matrix \mathbf{V} for QALY
+Outcome](media/H-QALY.png){#fig-V-qaly fig-align="center" width="60%"}
 
-6.  Healthy longevity as the value of occupancy:
+We simliarly define an occupancy indicator vector $\mathbf{v}$ just as
+we did $\mathbf{h}$:
 
-<!-- -->
+$$
+\mathbf{v}_{m}=\operatorname{vec} \mathbf{V}_{m}
+$$
 
-(a) Assign values to occupancy of each age-stage combination in matrices
-    $\mathbf{V}_{m}$, for each moment $m$ of interest, according to
-    (44).
+### Rewards for Partial Occupancy
 
-(b) Create the moment vectors $\mathbf{v}_{m}$ by applying the vec
-    operator to $\mathbf{V}_{m}$, as in (45).
+Like many health economic applications, the Healthy Longevity approach
+makes assumptions on partial occupancy in a health state.[^8]
+Specifically, the approach assumes that partial occupancy in a health
+state receives half the reward---essentially, we draw on an assumption
+that mid-cycle transitions occur at the half-way point.[^9]
 
-(c) Create the block-structured matrices $\tilde{\mathbf{B}}_{m}$ and
-    $\tilde{\mathbf{C}}_{m}$ as in (47) and (48).
+[^8]: For example, half-cycle corrections are often used---though there
+    are other methdos (e.g., Simpson's rule) that are also drawn upon.
 
-(d) Create the block-structured reward matrices $\tilde{\mathbf{R}}_{m}$
-    as in (12).
+[^9]: This is similar to the standard "half-cycle" correction, however
+    under this approach, a half-cycle correction occurs in each cycle,
+    not in the first and last cycles. As we will see below, for rewards
+    that are uniform across transient health states (e.g., calculating
+    life expectancy involves a "payoff" of 1.0 for every living health
+    state) this will yield identical answers as a Markov trace-based
+    approach that adopts a half-cycle correction.
 
-(e) Go to 8 .
+We combine this partial ocupancy assumption, along with the vectorized
+reward matrices $\mathbf{h}$ and $\mathbf{v}$ to obtain the following:
 
-<!-- -->
+$$
+\begin{aligned}
+\tilde{\mathbf{B}}_{1} & =\mathbf{h} \mathbf{v}_{1}^{\top}+\frac{1}{2}(\neg \mathbf{h})\left(\mathbf{v}_{1}^{\top}\right)+\frac{1}{2}\left(\mathbf{v}_{1}\right)\left(\neg \mathbf{h}^{\top}\right) \\
+\end{aligned}
+$$ and
 
-7.  Healthy longevity as the value of transitions:
+$$
+\tilde{\mathbf{C}}_{1}=\frac{1}{2} \mathbf{1}_{\alpha} \mathbf{v_1}^{\top}
+$$
 
-<!-- -->
+We combine $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ to
+obtain:
 
-(a) For each age $x$, obtain the moments of the value of each transition
-    in $\mathcal{T}_{x}$.
+$$
+\tilde{\mathbf{R}}_{1}=\left(\begin{array}{c|c}
+\tilde{\mathbf{B}}_{1} & \mathbf{0} \\
+\hline \tilde{\mathbf{C}}_{1} & \mathbf{0}
+\end{array}\right) 
+$$ which has same block structure as the transition probability matrix
+$\tilde{\mathbf{P}}$.
 
-(b) For each age $x$ and each moment $m$, create the matrices
-    $\mathbf{B}_{m}^{(x)}$ and $\mathbf{C}_{m}^{(x)}$ according to (49)
-    and (50).
+Expected outcomes are based on
 
-(c) Construct the block-structured matrices $\tilde{\mathbf{B}}_{m}$ and
-    $\tilde{\mathbf{C}}_{m}$ using (41) and (43) and assemble the
-    matrices $\tilde{\mathbf{R}}_{m}$ as in (12).
+$$
+\begin{aligned}
+& \tilde{\boldsymbol{\rho}}_{1}=\tilde{\mathbf{N}}^{\top} \mathbf{Z}\left(\tilde{\mathbf{P}} \circ \tilde{\mathbf{R}}_{1}\right)^{\top} \mathbf{1}_{s} 
+\end{aligned}
+$$ where $\tilde{\mathbf{N}}$ is the fundamental matrix
 
-(d) Go to 8 .
+$$
+\tilde{\mathbf{N}}=(\mathbf{I}-\tilde{\mathbf{U}})^{-1}
+$$ and $\mathbf{Z}$ is
 
-<!-- -->
+$$
+\mathbf{Z}=\left(\mathbf{I}_{\tau \omega} \mid \mathbf{0}_{\tau \omega \times \alpha}\right)
+$$
 
-8.  Compute the moments of healthy longevity from the transient matrix
-    $\tilde{\mathbf{U}}$, the transition matrix $\tilde{\mathbf{P}}$,
-    and the reward matrices $\tilde{\mathbf{R}}_{m}$, following
-    equations (13) - (15).
 
-```{r outcomes3}
+### Transition-Based Outcomes
+
+For transition-based outcomes such as YLLs, we adopt the following
+approach.
+
+First, we define the first moment of remaining life expectancy as the
+vector $\tilde{\boldsymbol{\eta}}^{\top}$. This vector has dimensions
+$\tau\omega \times 1$ and has the following basic structure:
+
+$$
+\tilde{\mathbf{\eta}}=\left(\begin{array}{c}
+\eta_{11} \\
+\vdots \\
+\eta_{\tau 1} \\
+\hline \vdots \\
+\hline \eta_{1 \omega} \\
+\vdots \\
+\eta_{\tau \omega}
+\end{array}\right),
+$$ 
+where $\eta_{i x}$ is remaining life expectancy for an individual in
+health state $i$ at a given age $x$. In this structure, remaining life expectancy for each health state is grouped within age classes. 
+
+Our choice for remaining life expectancy values $\eta_{i x}$ for YLL outcomes will depend on
+the context and research question at hand [@anand2019]. Historically, the GBD
+has utilized an *exogenous*, external life table 
+based on the maximum potential life span among humans [@globalburdenofdiseasecollaborativenetwork2021]. @anand2019 discuss alternative contexts in which remaining life expectancy based on an *endogenous* life table or life expectancy model might be preferred. 
+
+The distinction between *exogenous* and *endogenous* rewards for YLLs boils down to whether the remaining life expectancy value used originates from *outside* the population under study (i.e., mortality risks used to calculate remaining life expectancy at a given age are independent of the mortality risks of the population being assessed), or not. 
+
+For YLLs based on exogenous life tables, such as the reference life table published by the GBD, we define $\tilde{\boldsymbol{\eta}}^{\top}$ based on the reference life table value at each age. For YLLs based on an endogenous life table, we could simply swap in external life table values, *or* use the model itself to estimate remaining life expectancy for a given age and initial health state. 
+
+To aid in intuition, @tbl-exogenous provides remaining life expectancy values under exogenous and endogenous approaches for our running example. The row structure of this table mimics the structure needed for $\tilde{\boldsymbol{\eta}}^{\top}$---though note that the table only provides values for a subset of ages, not all age classes. 
+
+The column based on exogenous life tables (`Exogenous-Ref. Life Table`) is simply the reference life table life expectancy value as published by the GBD [@globalburdenofdiseasecollaborativenetwork2021]. The column marked `Endogenous-Model` is based on solving for remaining life expectancy using the occupancy based rewards approach discussed above and as outlined in @globalburdenofdiseasecollaborativenetwork2021.[^caswell] Finally, the last column (`Endogenous-Life Table`) uses country-specific life expectancy information (by age) published by the GBD [@globalburdenofdiseasecollaborativenetwork2020a]. In our running example---which has been structured and (roughly) calibrated to match life table data---the values for the Healthy state are very similar under both endogenous approaches.  
+
+[^caswell]: This column essentially reproduces the approach to remaining life expectancy as originally conceived in @caswell2021. The only difference is that we use the full rewards-based approach (which allows for partial transitions and half-cycle corrections) rather than solving for the fundamental matrix $\tilde{\mathbf{N}}$ and applying the formula $\tilde{\boldsymbol{\eta}}_{1}^{\top}=\mathbf{1}_{\tau \omega}^{\top} \tilde{\mathbf{N}}$
+
+```{r healthy-longevity-functions}
 #| code-fold: true
-#| code-summary: Calculate DALY Outcomes
-
+#| code-summary: Healthy Longevity Outcome Functions
+#| 
 healthy_longevity_occupancy <- function(params, H, V) {
     with(params,{
         map2(mUtilde,mPtilde,~({
@@ -2275,6 +2277,144 @@ healthy_longevity_yll <- function(params, life_expectancy, disc) {
         }))
     })
 }
+
+```
+
+```{r exogenous}
+#| code-fold: true
+#| code-summary: Exogenous vs Endogenous Life Expectancy by Age
+#| label: tbl-exogenous
+#| tbl-cap: Exogenous vs Endogenous Life Expectancy by Age and Initial Health State
+
+# Exogenous
+exGBD <- 
+  params$ExR %>% 
+  select(age = Age, exo_gbd = Life.Expectancy)
+
+# Endogenous-Model
+
+H = with(params3,matrix(1,nrow=tau, ncol=omega))
+V_LE = with(params3,matrix(1,nrow=tau, ncol = omega))
+LE3_ <- params3 %>% healthy_longevity_occupancy(H = H, V = V_LE)
+
+eHealthy <- LE3_ %>% map(~({
+  as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
+  mutate(age = params3$ages)  %>% 
+  mutate(initial = params3$tr_names[1])
+})) %>% 
+  set_names(params3$tx_names) %>% 
+  bind_rows(.id = "strategy") %>% 
+  filter(strategy == "natural_history") %>% 
+  filter(age %in% params$ExR$Age) %>% 
+  select(age,end_model=V1) %>% 
+  mutate(state = "Healthy")
+
+eCVD <- LE3_ %>% map(~({
+  as.data.frame(kronecker(diag(params3$omega),t(c(0,1))) %*% as.matrix(.x)) %>% 
+  mutate(age = params3$ages)  %>% 
+  mutate(initial = params3$tr_names[1])
+})) %>% 
+  set_names(params3$tx_names) %>% 
+  bind_rows(.id = "strategy") %>% 
+  filter(strategy == "natural_history") %>% 
+  filter(age %in% params$ExR$Age) %>% 
+  select(age,end_model=V1) %>% 
+  mutate(state = "CVD")
+
+# Endogenous - Life Table
+
+eLT <- lt %>% filter(age %in% params$ExR$Age) %>% 
+  select(age,end_lt = ex)  %>% 
+  as_tibble()
+
+exGBD %>% mutate(state = "Healthy") %>% 
+  bind_rows(exGBD %>% mutate(state = "CVD")) %>% 
+  left_join(
+    eHealthy %>% bind_rows(eCVD), c("age","state")
+  ) %>% 
+  left_join(
+    eLT %>% mutate(state = "Healthy") %>% 
+      bind_rows(eLT %>% mutate(state = "CVD")), c("age","state")
+  ) %>% 
+  arrange(age,rev(state)) %>% 
+  filter(age %in% c(5,25,50,95)) %>% 
+  select(age,state,exo_gbd,end_model,end_lt) %>% 
+  kable(digits = 2, col.names = c("Age","Initial Health State","Exogenous-Ref. Life Table", "Endogenous-Model","Endogenous-Life Table")) %>% 
+  kable_styling()
+```
+
+We next construct the reward matrices 
+
+
+
+$$
+\begin{aligned}
+\tilde{\mathbf{B}}_{1} & =\left(\mathbf{0}_{\tau \omega \times \tau \omega}\right) \\
+\tilde{\mathbf{C}}_{1} & =\left(\begin{array}{c}
+\tilde{\boldsymbol{\eta}}_{1}^{\top} \\
+\mathbf{0}_{1 \times \tau \omega}
+\end{array}\right) .
+\end{aligned}
+$$
+
+and
+
+$$
+\tilde{\mathbf{R}}_{1}=\left(\begin{array}{c|c}
+\mathbf{0}_{\tau \omega \times \tau \omega} & \mathbf{0}_{\tau \omega \times 2} \\
+\hline \tilde{\boldsymbol{\eta}}_{1}^{\top} & \mathbf{0}_{1 \times 2} \\
+\mathbf{0}_{1 \times \tau \omega} & \mathbf{0}_{1 \times 2}
+\end{array}\right)
+$$
+
+
+Echoing the approach to occupancy-based rewards above, expected outcomes are based on
+
+$$
+\begin{aligned}
+& \tilde{\boldsymbol{\rho}}_{1}=\tilde{\mathbf{N}}^{\top} \mathbf{Z}\left(\tilde{\mathbf{P}} \circ \tilde{\mathbf{R}}_{1}\right)^{\top} \mathbf{1}_{s} 
+\end{aligned}
+$$ where $\tilde{\mathbf{N}}$ is the fundamental matrix
+
+$$
+\tilde{\mathbf{N}}=(\mathbf{I}-\tilde{\mathbf{U}})^{-1}
+$$ and $\mathbf{Z}$ is
+
+$$
+\mathbf{Z}=\left(\mathbf{I}_{\tau \omega} \mid \mathbf{0}_{\tau \omega \times \alpha}\right)
+$$
+
+## Total Expected Outcomes
+
+For both occupancy- and transition-based outcomes, total (across all ages) outcomes for each starting health state are
+calculated as
+
+$$
+\boldsymbol{\rho}_{m}^{\text {stage }}(\operatorname{age} x)=\left(\mathbf{e}_{x}^{\top} \otimes \mathbf{I}_{\tau}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \tau \times 1
+$$ where $\otimes$ is the Kronecker operator.
+
+
+Alternatively, we may wish to calculate outcomes separately under
+different starting ages, and for a specified starting health state
+(e.g., healthy). This is given by
+
+$$
+\boldsymbol{\rho}_{m}^{\text {age }}(\text { stage } i)=\left(\mathbf{I}_{\omega} \otimes \mathbf{e}_{i}^{\top}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \omega \times 1,
+$$
+
+
+## Results
+
+@tbl-outcomes3 adds results based on the healthy longevity approach for comparison. In this table, we calculate YLLs using the exogenous reference life table from the GBD [@globalburdenofdiseasecollaborativenetwork2021]. Remaining life expectancy is identical across approaches, reflecting the fact that we used a half-cycle correction for Approaches 1 and 2, and the Healthy Longevity approach applies a similar half-cycle correction.[^cyclecorrection] YLDs, YLLs and DALYs are also similar across the three methods. 
+
+[^cyclecorrection]: Had we used a different cycle correction method we would yield slightly different results---but the differences are rarely meaningful for optimal decisions. 
+
+
+```{r outcomes3}
+#| label: tbl-outcomes3
+#| tbl-cap: "Life Expectancy, YLD, YLL and DALY Outcomes, by Approach"
+#| code-fold: true
+#| code-summary: Calculate DALY Outcomes
 
 # Life Expectancy 
 
@@ -2345,12 +2485,23 @@ tib %>%
     kable_styling()
 ```
 
-## DALYs by Year
+## DALYs for Different Starting Ages
+
+Our models above assumed a starting cohort age of 0. One nice feature of the healthy longevity approach, however, is that we can calculate outcomes for any starting age.[^startage] We can apply the following formula to our constructed transition and reward matrices to yield expected outcomes across ages:
+
+$$
+\boldsymbol{\rho}_{m}^{\text {age }}(\text { stage } i)=\left(\mathbf{I}_{\omega} \otimes \mathbf{e}_{i}^{\top}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \omega \times 1,
+$$
+
+[^startage] We could do this using the Markov-traced approaches, too, but we'd need to re-run the model with a new cohort starting at each age. 
+
+@fig-dalys-by-age plots the results. 
 
 ```{r daly-by-year}
 #| fig-align: center
 #| fig-width: 10
 #| fig-height: 8
+#| label: fig-dalys-by-age
 #| fig-cap: DALYs by Model Starting Age
 #| code-fold: true
 #| code-summary: Create Plot by Age
@@ -2397,6 +2548,8 @@ p3 + p1  / p2
 ```
 
 # DALYs Based on Endogenous Life Expectancy
+
+
 
 ```{r calc-endogenous}
 #| code-fold: true
