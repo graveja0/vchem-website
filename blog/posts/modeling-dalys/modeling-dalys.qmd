@@ -1978,7 +1978,9 @@ params3 <- with(params3,modifyList(params3,list(
 We now (nearly) have the components needed to calculate outcomes. A key
 difference in the Healthy Longevity approach, relative to the approaches
 above, is that we do not calculate outcomes off a trace. Rather, the method utilizes matrix calculus to solve for
-expected outcomes and other moments in the outcome distribution (e.g., variance, skewness, etc.).
+expected outcomes and other moments in the outcome distribution (e.g., variance, skewness, etc.).[^expected]
+
+[^expected]: For our purposes here we will focus on expected outcomes---though note that formulas for higher-order moments are provided in @caswell2021 and @caswell2018. 
 
 To calculate outcomes, we must next define "reward" matrices
 $\mathbf{R}_m$, where $m$ indexes the moment of interest (e.g., expected
@@ -2000,17 +2002,129 @@ classify each of our outcomes (LE, YLL, YLD, DALYs, QALYs) into broad classes co
 
 To calculate occupancy-based outcomes, we start with a reward matrix $\mathbf{H}$ (@fig-H-le) 
 
-![Reward matrix \mathbf{H}](media/H-LE.png){#fig-H-le fig-align="center" width=50%}
+![Reward matrix $\mathbf{H}$](media/H-LE.png){#fig-H-le fig-align="center" width=50%}
 
 
-Cell values within this matrix can be set to one if we want to "count" that health state - age combination in our outcome measure, and zero otherwise.[^reward]
+Cell values within this matrix can be set to one if we want to "reward" that health state-age combination in our outcome measure, and zero otherwise.[^reward]
 
 [^reward]: This structure allows us, for example, to estimate outcomes for certain age ranges or other decision-relevant combinations of health state and age. 
 
-For remaining life expectancy, we define $\mathbf{H}$ such that each cell receives a value of one. 
+For remaining life expectancy, we define $\mathbf{H}$ such that each cell receives a value of one. We use this matrix to define the reward vector $\mathbf{h}$:
 
-Occupancy-based outcomes with partial rewards (e.g., YLDs, QALYs) require an additional matrix $\mathbf{V}$. 
+$$
+\mathbf{h} = \text{vec } \mathbf{H}
+$$
+We also define $\neg \mathbf{h}$ as the complement of $\mathbf{h}$.
 
+Occupancy-based outcomes with partial rewards (e.g., YLDs, QALYs) require an additional matrix $\mathbf{V}$, which has the same structure as $\mathbf{H}$:
+
+If $\mathbf{S}$ is the set of states that receive a reward (e.g., the CVD state for both QALYs and YLDs), then a cycle spent in state $i$ at age $j$ is defined by 
+
+$$
+\mathbf{V}(i, j)= \begin{cases}E\left[v(i, j)\right] & \text { if }(i, j) \in \mathcal{S} \\ 0 & \text { otherwise }\end{cases}
+$$
+For YLD outcomes, $\mathbf{V}$ is defined as shown in @fig-V-yld, while for QALY outcomes $\mathbf{V}$ is defined as shown in @fig-V-qaly .
+
+![Reward matrix for YLD Outcome](media/H-YLD.png){#fig-V-yld fig-align="center" width=70%}
+
+![Reward matrix \mathbf{V} for QALY Outcome](media/H-QALY.png){#fig-V-qaly fig-align="center" width=60%}
+
+We simliarly define an occupancy indicator vector $\mathbf{v}$ just as we did $\mathbf{h}$:
+
+$$
+\mathbf{v}_{m}=\operatorname{vec} \mathbf{V}_{m}
+$$
+
+Like many health economic applications, the Healthy Longevity approach makes assumptions partial occupancy in a health state.[^cyclecorr] Specifically, the approach assumes that partial occupancy in a health state receives half the reward---essentially, we draw on an assumption that mid-cycle transitions occur half-way through. 
+
+We combine this assumption, along with the vectorized reward matrices $\mathbf{h}$ and $\mathbf{v}$ to obtain:
+
+$$
+\begin{aligned}
+\tilde{\mathbf{B}}_{1} & =\mathbf{h} \mathbf{v}_{1}^{\top}+\frac{1}{2}(\neg \mathbf{h})\left(\mathbf{v}_{1}^{\top}\right)+\frac{1}{2}\left(\mathbf{v}_{1}\right)\left(\neg \mathbf{h}^{\top}\right) \\
+\end{aligned}
+$$
+and
+
+$$
+\tilde{\mathbf{C}}_{1}=\frac{1}{2} \mathbf{1}_{\alpha} \mathbf{v_1}^{\top}
+$$
+
+
+
+[^cyclecorr]: For example, half-cycle corrections are often used---though there are other methdos (e.g., Simpson's rule) that are also drawn upon.
+
+We combine $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ to obtain:
+
+$$
+\tilde{\mathbf{R}}_{1}=\left(\begin{array}{c|c}
+\tilde{\mathbf{B}}_{1} & \mathbf{0} \\
+\hline \tilde{\mathbf{C}}_{1} & \mathbf{0}
+\end{array}\right) 
+$$
+which has same block structure as the transition probability matrix $\tilde{\mathbf{P}}$.
+
+Expected outcomes are based on
+
+$$
+\begin{aligned}
+& \tilde{\boldsymbol{\rho}}_{1}=\tilde{\mathbf{N}}^{\top} \mathbf{Z}\left(\tilde{\mathbf{P}} \circ \tilde{\mathbf{R}}_{1}\right)^{\top} \mathbf{1}_{s} 
+\end{aligned}
+$$
+where $\tilde{\mathbf{N}}$ is the fundamental matrix
+
+$$
+\tilde{\mathbf{N}}=(\mathbf{I}-\tilde{\mathbf{U}})^{-1}
+$$
+and $\mathbf{Z}$ is 
+
+$$
+\mathbf{Z}=\left(\mathbf{I}_{\tau \omega} \mid \mathbf{0}_{\tau \omega \times \alpha}\right)
+$$
+
+Total (across all ages) outcomes for each starting health state are calculated as
+
+$$
+\boldsymbol{\rho}_{m}^{\text {stage }}(\operatorname{age} x)=\left(\mathbf{e}_{x}^{\top} \otimes \mathbf{I}_{\tau}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \tau \times 1
+$$
+
+Alternatively, we may wish to calculate outcomes seprately under different starting ages, and for a specified starting health state (e.g., healthy). This is given by
+
+$$
+\boldsymbol{\rho}_{m}^{\text {age }}(\text { stage } i)=\left(\mathbf{I}_{\omega} \otimes \mathbf{e}_{i}^{\top}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \omega \times 1,
+$$
+
+where $\otimes$ is the Kroenecker operator.
+
+
+```{r, eval = FALSE}
+#| echo: false
+# \documentclass[12pt]{article}
+# \usepackage{amsmath}
+# \usepackage{graphicx}
+# \usepackage{hyperref}
+# \usepackage[latin1]{inputenc}
+# 
+# \title{Getting started}
+# \author{Veloci Raptor}
+# \date{03/14/15}
+# 
+# \begin{document}
+# \begin{table}[h!]
+# \centering
+# \begin{tabular}{|l|c|c|c|c|c|c|}
+# \hline
+# \textbf{Health} & \multicolumn{6}{c|}{\textbf{Age class}} \\ \cline{2-7} 
+# \textbf{State} & \textbf{1} & \textbf{2} & \textbf{3} & \textbf{4} & \textbf{...} & \textbf{$\omega$} \\ \hline
+# Healthy & 0 & 0 & 0 & 0 & 0 & 0 \\ \hline
+# CVD & dw_{CVD} & dw_{CVD} & dw_{CVD} & dw_{CVD} & dw_{CVD} & dw_{CVD} \\ \hline
+# \end{tabular}
+# \end{table}
+# 
+# 
+# \end{document}
+
+```
 
 
 Life Expectancy -
