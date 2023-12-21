@@ -2374,7 +2374,7 @@ $$
 \begin{aligned}
 & \tilde{\boldsymbol{\rho}}_{1}=\tilde{\mathbf{N}}^{\top} \mathbf{Z}\left(\tilde{\mathbf{P}} \circ \tilde{\mathbf{R}}_{1}\right)^{\top} \mathbf{1}_{s} 
 \end{aligned}
-$$ where $\tilde{\mathbf{N}}$ is the fundamental matrix
+$$ where $\circ$ denotes element-wise multiplication, $\tilde{\mathbf{N}}$ is the fundamental matrix
 
 $$
 \tilde{\mathbf{N}}=(\mathbf{I}-\tilde{\mathbf{U}})^{-1}
@@ -2402,6 +2402,11 @@ $$
 \boldsymbol{\rho}_{m}^{\text {age }}(\text { stage } i)=\left(\mathbf{I}_{\omega} \otimes \mathbf{e}_{i}^{\top}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \omega \times 1,
 $$
 
+## A Note on Discounting
+
+Though later GBD iterations removed age and time discounting for the purposes of documenting disease burdens worldwide, the World Health Organization's Choosing Interventions that are Cost-Effective (WHO-CHOICE) program recommends consideration of time discounting of health outcomes [@murray2020; @bertram2021a]. Discounting is also not covered in the original formulation of the Healthy Longevity approach as outlined in @caswell2021. 
+
+While we have set the annual discount rate to zero for this example, our approach adopts the WHO-CHOICE recommendation and includes the option for time discounting in the provided code. Specifically, we apply the cycle-specific discount factor to the values in the rewards matrix $\mathbf{V}$ and vector $\mathbf{v}$ for occupancy-based outcomes. For YLL outcomes, we apply the appropriate discounting factor to the age classes in the remaining life expectancy vector $\tilde{\boldsymbol{\eta}}^{\top}$. 
 
 ## Results
 
@@ -2546,6 +2551,8 @@ p3 = DALY3_ %>% map(~({
 
 p3 + p1  / p2
 ```
+
+Note that had we employed an annual discount rate in our results, the age-based plots shown in @fig-dalys-by-age are not recommended, as the various later ages would be discounted and would therefore not represent cohorts with different initial agess from the same baseline period. 
 
 # DALYs Based on Endogenous Life Expectancy
 
