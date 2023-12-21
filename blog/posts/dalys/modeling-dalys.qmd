@@ -610,7 +610,9 @@ $$
 
 $$
 \tilde{\mathbf{U}}=\mathbf{K}^{\top} \mathbb{D} \mathbf{K} \mathbb{U} \quad \tau \omega \times \tau \omega
-$$ $$
+$$ 
+
+$$
 \tilde{\mathbf{M}}=\left(\begin{array}{lll}
 \mathbf{M}_1 & \cdots & \mathbf{M}_\omega
 \end{array}\right) \quad \alpha \times \tau \omega

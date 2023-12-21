@@ -1,6 +1,6 @@
 ---
 title: "Structuring Models for Multidimensional Health Outcomes"
-subtitle: "Construction of a Decision-Analytic Discrete Time Markov Model Using Global Burden of Disease Data"
+subtitle: "Construction of a Decision-Analytic Markov Model Using Global Burden of Disease Data"
 author: John Graves
 date: "2023-12-15"
 categories: [CEA]
@@ -19,6 +19,7 @@ image: "media/DALY-image.svg"
 editor: 
   markdown: 
     wrap: 72
+lightbox: auto
 ---
 
 ```{r setup}
@@ -227,7 +228,6 @@ specific datasets used are provided in @tbl-datasource.
 
 # Process GBD Data
 
-
 ## Construct a Cause-Deleted Life Table
 
 For a disease as prevalent as CVD, it is important that background
@@ -388,7 +388,7 @@ lt %>% select(-location_id) %>% kable(digits = 3) %>% kable_styling()
 ```
 
 | Parameter | Description                                                                 |
-|--------------|---------------------------------------------------------|
+|------------------|------------------------------------------------------|
 | ex        | Remaining life expectancy                                                   |
 | qx        | Probability of death in age group                                           |
 | mx        | Death rate in age group                                                     |
@@ -756,11 +756,12 @@ df_gbd %>%
   kable_styling()
 ```
 
-
-
 # Parameterize Model
 
-Our next step is to parameterize the model. Note that for the matrix calculus method (Approach 3) we need to separately track transient (Healthy, CVD) and absorbing (background mortality, cause-specific mortality) health states, so we do that in the parameters here. 
+Our next step is to parameterize the model. Note that for the matrix
+calculus method (Approach 3) we need to separately track transient
+(Healthy, CVD) and absorbing (background mortality, cause-specific
+mortality) health states, so we do that in the parameters here.
 
 ```{r parameterize}
 # Parameterize
@@ -777,7 +778,7 @@ params <- list(
     df_gbd = df_gbd,  # disease incidence and cause-of-death data
     life_table = lt,  # overall life table
     
-    horizon = 110,    # model time horizon (in years)  
+    horizon = 120,    # model time horizon (in years)  
     r_ann = 1e-6,     # annual discount rate
     Delta_t = 1,      # time step (1 = yearly, 1/12 = monthly, etc.)
     age0 = 0,         # initial age in model
@@ -852,17 +853,32 @@ params$ages <- params$ages[-length(params$ages)]
 
 ## Define Functions for Time Inhomogeneous Parameters
 
-Nearly all health state progression parameters in our model are age-depdendent. We therefore need to define functions for each transition rate that are a function of the age of the cohort in the cycle. The functions below draw on the GBD data above to estimate age-specific transition rates for the following transitions:
+Nearly all health state progression parameters in our model are
+age-depdendent. We therefore need to define functions for each
+transition rate that are a function of the age of the cohort in the
+cycle. The functions below draw on the GBD data above to estimate
+age-specific transition rates for the following transitions:
 
-- `rH_CVD(age)` = Healthy to CVD (uses a slightly calibrated GBD disease incidence rate).
-- `rCVD_D(age)` = CVD to death from CVD (uses the cause-specific mortality rate from a cause-deleted life table).
-- `rD(age)` =  Death from other causes (uses cause-deleted mortality rate from a cause-deleted life table).
+-   `rH_CVD(age)` = Healthy to CVD (uses a slightly calibrated GBD
+    disease incidence rate).
+-   `rCVD_D(age)` = CVD to death from CVD (uses the cause-specific
+    mortality rate from a cause-deleted life table).
+-   `rD(age)` = Death from other causes (uses cause-deleted mortality
+    rate from a cause-deleted life table).
 
-For this model, we will simply draw rates directly from the GBD life tables and other data. A limitation of this approach is that ages are grouped into five-year buckets---meaning that the mortality rate will be held constant within an age group. 
+For this model, we will simply draw rates directly from the GBD life
+tables and other data. A limitation of this approach is that ages are
+grouped into five-year buckets---meaning that the mortality rate will be
+held constant within an age group.
 
-As an alternative option that provides age-specific (i.e., ungrouped) rates, we also include a parametric morality model (based on the [Heligman-Pollard model, which captures mortality across ages quite well](https://www.soa.org/globalassets/assets/library/research/transactions-of-society-of-actuaries/1990-95/1992/january/tsa92v446.pdf)).[^explore]
+As an alternative option that provides age-specific (i.e., ungrouped)
+rates, we also include a parametric morality model (based on the
+[Heligman-Pollard model, which captures mortality across ages quite
+well](https://www.soa.org/globalassets/assets/library/research/transactions-of-society-of-actuaries/1990-95/1992/january/tsa92v446.pdf)).[^2]
 
-[^explore]: To explore more on parametric mortality modeling, see our interactive tutorial [here](https://graves-vanderbilt.shinyapps.io/1-mortality-modeling/#section-construct-a-simple-alive-dead-model). 
+[^2]: To explore more on parametric mortality modeling, see our
+    interactive tutorial
+    [here](https://graves-vanderbilt.shinyapps.io/1-mortality-modeling/#section-construct-a-simple-alive-dead-model).
 
 ```{r age-dependent-incidence}
 #| code-fold: true
@@ -887,10 +903,17 @@ rH_CVD <- function(aa,gg = "Both") {
 
 ```
 
-The leftmost panel in @fig-hp shows the observed vs. fitted log(mortality rate) for our population, while the rightmost panel shows the residual. The residuals show clearly that the model fits mortality rates well up until about age 80, at which point the modeled mortality rate overstates the death rate until roughly age 95---after which the modeled mortality rate is well below the observed rate.  
+The leftmost panel in @fig-hp shows the observed vs. fitted
+log(mortality rate) for our population, while the rightmost panel shows
+the residual. The residuals show clearly that the model fits mortality
+rates well up until about age 80, at which point the modeled mortality
+rate overstates the death rate until roughly age 95---after which the
+modeled mortality rate is well below the observed rate.
 
-In the code below, we provide alternative functions to draw on the modeled mortality rates to return age-specific death transition rates---though note that in our results below, we continue to draw directly off the GBD data. 
-
+In the code below, we provide alternative functions to draw on the
+modeled mortality rates to return age-specific death transition
+rates---though note that in our results below, we continue to draw
+directly off the GBD data.
 
 ```{r parametric-mortality}
 #| code-fold: true
@@ -941,7 +964,6 @@ fit_mort <- function(params, mortality_model = "HP2", gg = "Both", outcome = "dx
     }))
 }
 ```
-
 
 ```{r heligman-pollard-figure}
 #| label: fig-hp
@@ -1081,7 +1103,11 @@ rCVD_D_p = function(aa,params) {
 }
 ```
 
-Using the functions defined above, we can easily extract transition rates for a given age. Echoing the comments above, note that the basic function (`rD(age)`) uses grouped mortality rate data, whereas the function based on the Heligman-Pollard model yields different rates for each age:
+Using the functions defined above, we can easily extract transition
+rates for a given age. Echoing the comments above, note that the basic
+function (`rD(age)`) uses grouped mortality rate data, whereas the
+function based on the Heligman-Pollard model yields different rates for
+each age:
 
 ```{r}
 # Rate of non-cause death for a 75 and 76 year-old
@@ -1094,11 +1120,16 @@ rD_p(76, params = params)
 
 # Approach 1: Markov Trace
 
-With the basic parameters and parameter functions defined, we can now move to our first approach. Under this approach, we will separate cause-specific and non-CVD deaths as separate health states. The updated state transition diagram is shown in @fig-diagram1:
+With the basic parameters and parameter functions defined, we can now
+move to our first approach. Under this approach, we will separate
+cause-specific and non-CVD deaths as separate health states. The updated
+state transition diagram is shown in @fig-diagram1:
 
-![State Transition Diagram for Approach 1](media/healthy-cvd-dead-deadcvd.png){#fig-diagram1}
+![State Transition Diagram for Approach
+1](media/healthy-cvd-dead-deadcvd.png){#fig-diagram1}
 
-Building out this model structure requires constructing a series of transition probability matrices. 
+Building out this model structure requires constructing a series of
+transition probability matrices.
 
 ```{r params1}
 #| cache: true
@@ -1177,7 +1208,8 @@ params1 <- with(params1,modifyList(params1,list(
 
 ```
 
-We next draw upon the transition probabilty matrices to create a Markov trace (@tbl-markovtrace1):
+We next draw upon the transition probabilty matrices to create a Markov
+trace (@tbl-markovtrace1):
 
 ```{r trace1}
 #| code-fold: true
@@ -1221,9 +1253,15 @@ tr  %>%
 
 ## Checkpoint: Overall Survival
 
-Before we proceed, it is useful to stop and check whether the experience of our modeled cohort mirrors the experience of the population as summarized in the GBD input data sources. 
+Before we proceed, it is useful to stop and check whether the experience
+of our modeled cohort mirrors the experience of the population as
+summarized in the GBD input data sources.
 
-In @fig-survival below, we calculate and plot the percent of the cohort surviving at each age (`1 - DeathOC - DeathCVD`) and overlay the survival probability from the population life table used to parameterize the model. As the figure shows, our modeled cohort nearly exactly matches the survival experience of the population. 
+In @fig-survival below, we calculate and plot the percent of the cohort
+surviving at each age (`1 - DeathOC - DeathCVD`) and overlay the
+survival probability from the population life table used to parameterize
+the model. As the figure shows, our modeled cohort nearly exactly
+matches the survival experience of the population.
 
 ```{r survival}
 #| fig-cap: Survival Curve
@@ -1265,10 +1303,12 @@ as.matrix(tr) %*% d_ %>% data.frame() %>%
 
 ## Checkpoint: CVD Prevalence
 
-Our next checkpoint is designed to assess whether CVD prevalance at any age matches the prevalance value in the GBD data. @fig-prevalence below shows this using the parameters above. 
+Our next checkpoint is designed to assess whether CVD prevalance at any
+age matches the prevalance value in the GBD data. @fig-prevalence below
+shows this using the parameters above.
 
 ::: {.callout-note appearance="simple"}
-Note that this 
+Note that this
 :::
 
 ```{r prevalence}
@@ -1616,119 +1656,100 @@ tib %>%
     kable_styling()
 ```
 
-# Approach 3: Markov Chain with Rewards
+# Approach 3: Healthy Longevity (Markov Chain with Rewards)
 
-Our results can be summarised in a step-by-step protocol for calculations of healthy longevity.
+We adapt the protocol in @caswell2021 to calculate, YLL, YLD, and DALY
+outcomes using Markov Chain with Rewards approach:
 
-1. Start with the transition matrices $\mathbf{U}_{x}(x=1, \ldots, \omega)$, the age advancement matrices $\mathbf{D}_{j}(j=1, \ldots, s)$, and the mortality matrices $\mathbf{M}_{i}(i=1, \ldots, \omega)$.
-2. Construct the block-structured age $\times$ stage-classified matrices $\tilde{\mathbf{U}}, \tilde{\mathbf{M}}$, and $\tilde{\mathbf{P}}$ following equations (9), (10), and (11).
-3. To calculate healthy longevity ...
+Define
 
-... as lifetime occupancy of health stages, go to 4.
+$$
+\begin{aligned}
+\tau &= \text{Number of transient (non-absorbing) states}\\
+\alpha &= \text{Number of absorbing states}\\
+\omega &= \text{Number of cycles} \\
+s &= \text{Total number of states; }s=\tau\omega+\alpha \\
+\mathbf{U}_{x} &= \text{Transition matrix for age }x, \text{for }x=1,\dots,\omega\\
+\mathbf{D}_{j} &=\text{Age advancement matrix for stage }j, \text{for }j=1,\dots,\tau \\
+\mathbf{M}_{i} &= \text{Mortality matrix for age class }x, \text{for } x = 1,\dots\omega \\
+\mathbf{K} &= \text{vec-permutation matrix; parameters }\tau,\omega
+\end{aligned}
+$$
 
-... as lifetime number of transitions among health stages, go to 5.
+In the above notation, the matrix $\mathbf{U}_x$ captures transition
+probabilities among transient (i.e., non-absorbing) health states, while
+$\mathbf{M}_x$ captures transitions from transient health states to the
+absorbing death states (non-CVD mortality and CVD-mortality). Indexing
+by age class $x$ indicates that separate matrices are defined for each
+age in the Markov model---that is, our Markov model is time
+*inhomogeneous*.
 
-... as the value of lifetime occupancy of health stages, go to 6 .
+To construct $\mathbf{U}_x$ and $\mathbf{M}_x$ we define transition rate
+("intensity") matrices as in Approaches 1 and 2 above.[^3] The overall
+intensity matrix $\mathbf{Q_x}$ is given by
 
-... as the value of lifetime transitions among health stages, go to 7 .
+[^3]: The only difference with the two approaches above is that the rows
+    in these rate matrices correspond to the final state, while the
+    columns correspond to the starting state; this is the opposite of
+    the rate matrices defined above, where the rows corresponded to the
+    starting health state and the columns to the ending health state in
+    a given cycle.
 
-4. Healthy longevity as occupancy:
+$$
+\mathbf{Q}_x=\left(\begin{array}{c|c}
+\mathbf{V}_x & \mathbf{0} \\
+\hline \mathbf{S}_x  & \mathbf{0}
+\end{array}\right)
+$$ where $\mathbf{V}_x$ is the rate matrix for the transitory (i.e.,
+non-absorbing) states and $\mathbf{S}_x$ is the rate matrix for the
+absorbing states. The diagonal of $\mathbf{Q}_x$ is the negative sum of
+the non-diagonal column elements, thus making the column sums of
+$\mathbf{Q}_x$ zero.
 
-(a) Create the array $\mathbf{H}$ in Figure 2. Insert 1 in the ages and health stages of interest.
+For the defined discrete time step $\Delta_t$, the discrete time
+transition probability matrix $\mathbf{P}$ is obtained by taking the
+matrix exponential of the intensity matrix ($\mathbf{Q}$) multipled by
+the time step ($\Delta_t$):
 
-(b) Create the reward vector $\mathbf{h}$ by applying the vec operator to $\mathbf{H}$, as in (27).
+$$
+\mathbf{P}_x =e^{\mathbf{Q}_x  \Delta t}
+$$
 
-(c) Create the matrices $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ following (30) and (31).
+We can then obtain $\mathbf{U}_x$ and $\mathbf{M}_x$ based on:
 
-(d) Create the matrix of occupancy rewards $\tilde{\mathbf{R}}_{1}$ from $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ using equation (12).
+$$
+\mathbf{P}_x =\left(\begin{array}{c|c}
+\mathbf{U}_x  & \mathbf{0} \\
+\hline \mathbf{M}_x  & \mathbf{0}
+\end{array}\right)
+$$
 
-(e) Create the higher moment reward matrices $\tilde{\mathbf{R}}_{2}, \tilde{\mathbf{R}}_{3}, \ldots$ using (34).
+In addition, the matrix $\mathbf{D}_j$ defines age advancement in the
+Markov chain. Using the example from @caswell2021, if $\omega=3$ then
 
-(f) Go to 8 .
+$$
+\mathbf{D}_j=\left(\begin{array}{ccc}
+0 & 0 & 0 \\
+1 & 0 & 0 \\
+0 & 1 & {[1]}
+\end{array}\right) \quad j=1, \ldots, \tau
+$$
 
-5. Healthy longevity as the number of transitions:
-
-(a) For each age $x$ of interest, specify the set $\mathcal{T}_{x}$ of transitions to count.
-
-(b) Construct the indicator matrices $\mathbf{B}_{1}^{(x)}$ and $\mathbf{C}_{1}^{(x)}$ using (38) and (39).
-
-(c) Construct the block-structured matrices $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ using (41) and (43).
-
-(d) Assemble the matrix $\tilde{\mathbf{R}}_{1}$ as in (12).
-
-(e) Create the higher moment reward matrices $\tilde{\mathbf{R}}_{2}, \tilde{\mathbf{R}}_{3}, \ldots$ using (34).
-
-(f) Go to 8 .
-
-6. Healthy longevity as the value of occupancy:
-
-(a) Assign values to occupancy of each age-stage combination in matrices $\mathbf{V}_{m}$, for each moment $m$ of interest, according to (44).
-
-(b) Create the moment vectors $\mathbf{v}_{m}$ by applying the vec operator to $\mathbf{V}_{m}$, as in (45).
-
-(c) Create the block-structured matrices $\tilde{\mathbf{B}}_{m}$ and $\tilde{\mathbf{C}}_{m}$ as in (47) and (48).
-
-(d) Create the block-structured reward matrices $\tilde{\mathbf{R}}_{m}$ as in (12).
-
-(e) Go to 8 .
-
-7. Healthy longevity as the value of transitions:
-
-(a) For each age $x$, obtain the moments of the value of each transition in $\mathcal{T}_{x}$.
-
-(b) For each age $x$ and each moment $m$, create the matrices $\mathbf{B}_{m}^{(x)}$ and $\mathbf{C}_{m}^{(x)}$ according to (49) and (50).
-
-(c) Construct the block-structured matrices $\tilde{\mathbf{B}}_{m}$ and $\tilde{\mathbf{C}}_{m}$ using (41) and (43) and assemble the matrices $\tilde{\mathbf{R}}_{m}$ as in (12).
-(d) Go to 8 .
-
-8. Compute the moments of healthy longevity from the transient matrix $\tilde{\mathbf{U}}$, the transition matrix $\tilde{\mathbf{P}}$, and the reward matrices $\tilde{\mathbf{R}}_{m}$, following equations (13) - (15).
-
+In our implementation, we include the (optional) 1 value in the lower
+right corner; this assumes that after the last specified age, the cohort
+continues to experience transitions among health states according to the
+transition probabilities defined for the last age class. If this value
+is 0, the model will assume that everyone dies after the last cycle.
 
 ```{r parameters3}
 #| code-fold: true
-#| code-summary: Parameterize the Healthy Longevity Model (continued)
+#| code-summary: Parameterize the Healthy Longevity Model (Part 1)
 #| cache: true
-
-vec <-  # a simple function to return the vec of an array
-    function(x) {
-        y <- c(x)
-        return(y)
-    }
-
-vecperm <- 
-    # vecperm
-    # function to calculate the vec permutation matrix K of index m,n
-    # let X be a m x n matrix, and X' the transpose of X
-    # then K satisfies 
-    # vec(X') = K*vec(X)
-    function(m, n) {
-        K <- matrix(0, m * n, m * n)
-        a <- matrix(0, m, n)
-        
-        for (i in 1:m) {
-            for (j in 1:n) {
-                e <- a
-                e[i, j] <- 1
-                K <- K + kronecker(e, t(e))
-            }
-        }
-        
-        return(K)
-    }
 
 params3_ <- with(params,modifyList(params,list(
     alpha = length(ab_names),
     tau = length(tr_names), 
-    s = length(tr_names)*omega + length(ab_names), #total number of states;s=τω+α
-    # Age transition Matrix
-    D = {
-        # Create diagonal age advancement matrix
-        D <- matrix(0, omega, omega)
-        vec <- rep(1, omega-1)
-        D[row(D)-1 == col(D)] <- vec
-        D[omega,omega] = 1
-        D
-    }
+    s = length(tr_names)*omega + length(ab_names) #total number of states;s=τω+α
 )))
 
 params3_ <- with(params3_,modifyList(params3_,list(
@@ -1792,7 +1813,7 @@ params3_ <- with(params3_,modifyList(params3_,list(
       }))   
 )))
 
-# not sure why this is needed, but otherwise the length ogets set too long...
+# not sure why this is needed, but otherwise the length gets set too long...
 params3 <- with(params3_, modifyList(params3_, list(mR_ = mR %>% transpose())))
 params3$mR = params3$mR_
 
@@ -1834,11 +1855,101 @@ params3 <- with(params3,modifyList(params3,list(
         P = .x
         P %>% map(~(.x[ab_names,tr_names]))
         
-    })),
-    bbD_ = kronecker(diag(tau), D)
+    }))
 )))
 
 params3 <- with(params3,modifyList(params3,list(
+    D = {
+        # Create diagonal age advancement matrix
+        D <- matrix(0, omega, omega)
+        vec <- rep(1, omega-1)
+        D[row(D)-1 == col(D)] <- vec
+        D[omega,omega] = 1
+        D
+    }
+)))
+
+```
+
+We next combine the transition matrices (for all age classes) together
+into a series of block-structured matrices as follows:
+
+$$
+\mathbb{U}=\left(\begin{array}{c|c|c}
+\mathbf{U}_1 & \cdots & \mathbf{0} \\
+\hline & \ddots & \\
+\hline \mathbf{0} & \cdots & \mathbf{U}_\omega
+\end{array}\right)
+$$
+
+$$
+\mathbb{D}=\left(\begin{array}{c|c|c}
+\mathbf{D}_1 & \cdots & \mathbf{0} \\
+\hline & \ddots & \\
+\hline \mathbf{0} & \cdots & \mathbf{D}_\tau
+\end{array}\right)
+$$
+
+$$
+\tilde{\mathbf{U}}=\mathbf{K}^{\top} \mathbb{D} \mathbf{K} \mathbb{U} \quad \tau \omega \times \tau \omega
+$$
+
+where $\mathbf{K}$ is a permutation matrix known as the vec-permutation
+matrix.[^vecperm] See @henderson1981 and Appendix B in @caswell2021 for further
+information.
+
+[^vecperm]: A function to construct a vec-permultation matrix is provided within the code snippet below. 
+
+We also define
+
+$$
+\tilde{\mathbf{M}}=\left(\begin{array}{lll}
+\mathbf{M}_1 & \cdots & \mathbf{M}_\omega
+\end{array}\right) \quad \alpha \times \tau \omega
+$$
+
+and
+
+$$
+\tilde{\mathbf{P}}=\left(\begin{array}{c|c}
+\tilde{\mathbf{U}} & \mathbf{0}_{\tau \omega \times \alpha} \\
+\hline \tilde{\mathbf{M}} & \mathbf{I}_{\alpha \times \alpha}
+\end{array}\right) \quad(\tau \omega+\alpha) \times(\tau \omega+\alpha)
+$$
+
+```{r parameters3-block}
+#| code-fold: true
+#| code-summary: Construct block matrices
+
+vec <-  # a simple function to return the vec of an array
+    function(x) {
+        y <- c(x)
+        return(y)
+    }
+
+vecperm <- 
+    # vecperm
+    # function to calculate the vec permutation matrix K of index m,n
+    # let X be a m x n matrix, and X' the transpose of X
+    # then K satisfies 
+    # vec(X') = K*vec(X)
+    function(m, n) {
+        K <- matrix(0, m * n, m * n)
+        a <- matrix(0, m, n)
+        
+        for (i in 1:m) {
+            for (j in 1:n) {
+                e <- a
+                e[i, j] <- 1
+                K <- K + kronecker(e, t(e))
+            }
+        }
+        
+        return(K)
+    }
+
+params3 <- with(params3,modifyList(params3,list(
+    bbD_ = kronecker(diag(tau), D),
     bbU_ =  mU %>% 
             map(~(bdiag(.x))),
     K = vecperm(tau, omega)
@@ -1863,6 +1974,132 @@ params3 <- with(params3,modifyList(params3,list(
         }))
 )))
 ```
+
+We now (nearly) have the components needed to calculate outcomes. A key
+difference in the Healthy Longevity approach, relative to the approaches
+above, is that we do not calculate outcomes off a trace. Rather, the method utilizes matrix calculus to solve for
+expected outcomes and other moments in the outcome distribution (e.g., variance, skewness, etc.).
+
+To calculate outcomes, we must next define "reward" matrices
+$\mathbf{R}_m$, where $m$ indexes the moment of interest (e.g., expected
+value, variance, etc.). The structure and values of $\mathbf{R}_m$ will
+differ, however, depending on the outcome. 
+
+To facilitate understanding, we briefly
+classify each of our outcomes (LE, YLL, YLD, DALYs, QALYs) into broad classes corresponding to whether the payoff or "reward" applies to occupancy, or to transitions, within or to a given health state:
+
+| Outcome                                   | Reward Class                                                            |
+|-------------------------------------------|-------------------------------------------------------------------------|
+| Life Expectancy                           | Occupancy (1.0 for each alive health state)                             |
+| Years of life lived with disability (YLD) | Occupancy (disability weight applied to time in CVD state)              |
+| Yearls of life lost to disease (YLL)      | Transition (remaining life expectancy applied to CVD death transitions) |
+| Disability-Adjusted Life Years (DALYs)    | Occupancy (YLD) + Transition (YLL)                                      |
+| Quality-Adjusted Life Years               | Occupancy (utility weights applied to alive health states)              |
+
+: Classification of Health Outcomes
+
+To calculate occupancy-based outcomes, we start with a reward matrix $\mathbf{H}$ (@fig-H-le) 
+
+![Reward matrix \mathbf{H}](media/H-LE.png){#fig-H-le fig-align="center" width=50%}
+
+
+Cell values within this matrix can be set to one if we want to "count" that health state - age combination in our outcome measure, and zero otherwise.[^reward]
+
+[^reward]: This structure allows us, for example, to estimate outcomes for certain age ranges or other decision-relevant combinations of health state and age. 
+
+For remaining life expectancy, we define $\mathbf{H}$ such that each cell receives a value of one. 
+
+Occupancy-based outcomes with partial rewards (e.g., YLDs, QALYs) require an additional matrix $\mathbf{V}$. 
+
+
+
+Life Expectancy -
+
+3.  Life Expectancy
+
+<!-- -->
+
+-   Create the array $\mathbf{H}$.
+-   Create the reward vector $\mathbf{h}$ by applying the vec operator
+    to $\mathbf{H}$, i.e.,
+    $\mathbf{h} = \text{vec } \mathbf{H} \quad \tau \omega \times 1$.
+-   Create the matrices $\tilde{\mathbf{B}}_{1}$ and
+    $\tilde{\mathbf{C}}_{1}$
+-   Create the matrix of occupancy rewards $\tilde{\mathbf{R}}_{1}$ from
+    $\tilde{\mathbf{B}}_{1}$ and $\tilde{\mathbf{C}}_{1}$ using equation
+    (12).
+-   Create the higher moment reward matrices
+    $\tilde{\mathbf{R}}_{2}, \tilde{\mathbf{R}}_{3}, \ldots$ using (34).
+-   Go to 8 .
+
+<!-- -->
+
+5.  Healthy longevity as the number of transitions:
+
+<!-- -->
+
+(a) For each age $x$ of interest, specify the set $\mathcal{T}_{x}$ of
+    transitions to count.
+
+(b) Construct the indicator matrices $\mathbf{B}_{1}^{(x)}$ and
+    $\mathbf{C}_{1}^{(x)}$ using (38) and (39).
+
+(c) Construct the block-structured matrices $\tilde{\mathbf{B}}_{1}$ and
+    $\tilde{\mathbf{C}}_{1}$ using (41) and (43).
+
+(d) Assemble the matrix $\tilde{\mathbf{R}}_{1}$ as in (12).
+
+(e) Create the higher moment reward matrices
+    $\tilde{\mathbf{R}}_{2}, \tilde{\mathbf{R}}_{3}, \ldots$ using (34).
+
+(f) Go to 8 .
+
+<!-- -->
+
+6.  Healthy longevity as the value of occupancy:
+
+<!-- -->
+
+(a) Assign values to occupancy of each age-stage combination in matrices
+    $\mathbf{V}_{m}$, for each moment $m$ of interest, according to
+    (44).
+
+(b) Create the moment vectors $\mathbf{v}_{m}$ by applying the vec
+    operator to $\mathbf{V}_{m}$, as in (45).
+
+(c) Create the block-structured matrices $\tilde{\mathbf{B}}_{m}$ and
+    $\tilde{\mathbf{C}}_{m}$ as in (47) and (48).
+
+(d) Create the block-structured reward matrices $\tilde{\mathbf{R}}_{m}$
+    as in (12).
+
+(e) Go to 8 .
+
+<!-- -->
+
+7.  Healthy longevity as the value of transitions:
+
+<!-- -->
+
+(a) For each age $x$, obtain the moments of the value of each transition
+    in $\mathcal{T}_{x}$.
+
+(b) For each age $x$ and each moment $m$, create the matrices
+    $\mathbf{B}_{m}^{(x)}$ and $\mathbf{C}_{m}^{(x)}$ according to (49)
+    and (50).
+
+(c) Construct the block-structured matrices $\tilde{\mathbf{B}}_{m}$ and
+    $\tilde{\mathbf{C}}_{m}$ using (41) and (43) and assemble the
+    matrices $\tilde{\mathbf{R}}_{m}$ as in (12).
+
+(d) Go to 8 .
+
+<!-- -->
+
+8.  Compute the moments of healthy longevity from the transient matrix
+    $\tilde{\mathbf{U}}$, the transition matrix $\tilde{\mathbf{P}}$,
+    and the reward matrices $\tilde{\mathbf{R}}_{m}$, following
+    equations (13) - (15).
 
 ```{r outcomes3}
 #| code-fold: true
@@ -2003,7 +2240,8 @@ tib %>%
 #| fig-cap: DALYs by Model Starting Age
 #| code-fold: true
 #| code-summary: Create Plot by Age
-#| 
+#| column: page
+
 p1 = YLL3_ %>% map(~({
   as.data.frame(kronecker(diag(params3$omega),t(c(1,0))) %*% as.matrix(.x)) %>% 
   mutate(age = params3$ages)  %>% 
@@ -2060,6 +2298,23 @@ qaly_daly_ = with(params1,(matrix(c(0,
             ), c("DW")))
 ))
 
+# QALY-LIKE DALY
+YLL_qaly_daly_ = with(params1,(matrix(c(0,
+               0 ,
+              0,
+              1),
+            dimnames = list(c(
+                c(tr_names,ab_names)
+            ), c("DW")))
+))
+
+YLL_QALY_DALYt <- trace1 %>% map( ~ ({
+    tmp = as.matrix(.x) %*% YLL_qaly_daly_
+    tmp
+}))
+
+YLL_QALY_DALY = YLL_QALY_DALYt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = params1$cycle_correction)))
+
 
 QALY_DALYt <- trace1 %>% map( ~ ({
     tmp = as.matrix(.x) %*% qaly_daly_
@@ -2074,17 +2329,35 @@ QALY_DALY = QALY_DALYt %>% map(~sum(.x*  disc * gen_wcc(params1$omega, method = 
 #| code-fold: true
 #| code-summary: DALYs based on endogenous life expectancy
 
-N = with(params3,({
-  mUtilde %>% map(~({
-    solve(diag(tau*omega)-.x)
-  }))
-}))
+# Caswell and van Daalen (2021) recommend using eq (51), which multiplies the 
+# fundamental matrix (eq 16) by a vector of ones. However, this estimate
+# of longevity does not make any kind of cycle correction. Instead, we will
+# use the estimate of life expectancy calculated earlier (LE3) to fill out the 
+# "reward" matrix for remaining life expectancy at each age. The 
+# code to use the original approach is provided (and commented out) below, however.
+# N = with(params3,({
+#   mUtilde %>% map(~({
+#     solve(diag(tau*omega)-.x)
+#   }))
+# }))
+# 
+# remaining_life_expectancy_endogenous = as.vector(t(rep(1,params3$tau*params3$omega)) %*% N[[1]]) %>% {.[seq(1,params3$tau*params3$omega,2)]}
+# YLL3_endogenous_ <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
 
-remaining_life_expectancy_endogenous = as.vector(t(rep(1,params3$tau*params3$omega)) %*% N[[1]]) %>% {.[seq(1,params3$tau*params3$omega,2)]}
+remaining_life_expectancy_endogenous <- 
+  LE3_ %>% map(~({.x[seq(1,params3$tau*params3$omega,2)]})) %>% {.$natural_history}
 YLL3_endogenous_ <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
 
-remaining_life_expectancy_endogenous <- LE3 %>% map(~({.x[seq(1,params3$tau*params3$omega,2)]})) %>% {.$natural_history}
-YLL3_endogenous <- params3 %>% healthy_longevity_yll(life_expectancy = remaining_life_expectancy_endogenous, disc = disc[-length(disc)])
+YLL3_endogenous <- YLL3_endogenous_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1] # life expectancy when starting healthy
+}))
+
+# Endogeneous life expectancy only affects YLLs, so we can simply use the YLD value from above.
+YLD3_endogenous <- YLD3_ %>% map(~({
+  tmp <- (kronecker(t(c(1,rep(0,params3$omega-1))) ,diag(params3$tau)) %*% as.matrix(.x))
+  tmp[1,1]
+}))
 
 DALY3_endogenous_ <- map2(YLL3_endogenous_,YLD3_,~(.x+.y))
 
@@ -2093,19 +2366,20 @@ DALY3_endogenous <- DALY3_endogenous_ %>% map(~({
   tmp[1,1]
 }))
 
-result4 <- cbind(DALY3_endogenous) %>%
+
+result4 <- cbind(LE3, YLD3_endogenous, YLL3_endogenous, DALY3_endogenous) %>%
     as.data.frame() %>%
     mutate_all(~as.numeric(.))  %>%
     rownames_to_column(var="strategy") %>%
     mutate(approach = "Markov Chain With Rewards - Endogenous") %>%
-    dplyr::select(approach, strategy, DALY=DALY3_endogenous) %>% 
+    dplyr::select(approach, strategy ,LE = LE3, YLD = YLD3_endogenous, YLL = YLL3_endogenous,  DALY=DALY3_endogenous) %>% 
   bind_rows(
-     cbind(QALY_DALY) %>%
+     cbind(LE,YLD,YLL_QALY_DALY,QALY_DALY) %>%
       as.data.frame() %>%
       mutate_all(~as.numeric(.))  %>%
       rownames_to_column(var="strategy") %>%
       mutate(approach = "Markov Trace - QALY-like DALY") %>%
-      dplyr::select(approach, strategy, DALY=QALY_DALY)
+      dplyr::select(approach, strategy, LE, YLD , YLL= YLL_QALY_DALY, DALY=QALY_DALY)
   )
 
 tib <- result1 %>%
@@ -2122,55 +2396,59 @@ tib %>%
     kable_styling()
 ```
 
-
 # Incremental Outcomes
 
-```{r table-diff-daly}
+```{r figure-diff-daly}
 #| code-fold: true
 #| code-summary: DALY changes
-#| tbl-cap: Disability-Adjusted Life Year Outcome Changes Relative to Natural History Model
-#| eval: false
-#| 
+#| fig-cap: |
+#|  Disability-Adjusted Life Year Outcome Changes Relative to Natural History Model
+#| fig-align: center
+#| fig-width: 10
+#| column: page
+#| label: fig-incremental
+
 tib %>% 
-    gather(outcome,value,-approach,-strategy) %>% 
-    na.omit() %>% 
-    unite(outcome,outcome,strategy) %>% 
-    spread(outcome,value) %>% 
-    select(approach,starts_with("DALY")) %>% 
-    mutate(DALY_prevent = DALY_prevent - DALY_natural_history,
-           DALY_treat = DALY_treat - DALY_natural_history,
-           DALY_prevent_treat = DALY_prevent_treat - DALY_natural_history) %>% 
-    select(approach, DALY_natural_history, DALY_prevent, DALY_treat, DALY_prevent_treat) %>% 
-    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Markov Chain With Rewards"))) %>% 
-    arrange(approach) %>% 
-    kable(digits = 3, col.names = c("Approach","DALY (ref.)", "incDALY Prevention","incDALY Treatment","incDALY Prevention and Treatment")) %>% 
-    kable_styling()
+  select(approach,strategy,YLD,YLL,DALY) %>% 
+  left_join(
+    tib %>% 
+    filter(strategy == "natural_history") %>% 
+    select(-strategy) %>% 
+    select(approach,YLD_ref = YLD,YLL_ref = YLL,DALY_ref = DALY), c("approach")
+  ) %>% 
+  mutate(YLD = YLD - YLD_ref,
+         YLL = YLL - YLL_ref,
+         DALY = DALY - DALY_ref) %>% 
+  select(approach,strategy,YLD,YLL,DALY) %>% 
+ 
+  mutate(approach = factor(approach, levels = c("Markov Trace","Transition States","Markov Chain With Rewards","Markov Chain With Rewards - Endogenous","Markov Trace - QALY-like DALY"))) %>% 
+  filter(strategy != "natural_history") %>% 
+  gather(outcome,value,-approach,-strategy) %>% 
+  mutate(outcome = factor(outcome, levels = c("YLD","YLL","DALY"))) %>% 
+  mutate(value = value*-1) %>% 
+  ggplot(aes(x=strategy, y = value,  fill = approach)) + geom_bar(stat="identity", position = position_dodge()) +
+  facet_grid(~outcome, scales="free") +
+  theme_ipsum() +
+  scale_fill_aaas(name="") + 
+  theme(legend.position="top") +
+  geom_hline(aes(yintercept = 0)) +
+  coord_flip() +
+  labs(x = "", y = "Change relative to natural_history\nNote: Scale changes in each panel") 
+
 ```
 
-```{r table-diff-qaly}
-#| code-fold: true
-#| code-summary: QALY plot
-#| tbl-cap: Quality Adjusted Life Year Outcome Changes Relative to Natural History Model
-#| eval: false
-#| 
-tibble(approach = rep("Markov Trace",4), strategy=names(unlist(QALY)),  QALY = unlist(QALY)) %>% 
-  bind_rows(
-    tibble(approach = rep("Transition States",4), strategy=names(unlist(QALY2)),  QALY = unlist(QALY2))
-  ) %>% 
-  bind_rows(
-    tibble(approach = rep("Healthy Longevity",4), strategy = names(unlist(QALY2)), QALY = c(QALY3$natural_history[1],QALY3$prevent[1],QALY3$treat[1],QALY3$prevent_treat[1]))
-  ) %>% 
-  mutate(outcome = glue("QALY_{strategy}")) %>% 
-  rename(value = QALY) %>% 
-  select(approach,outcome,value) %>% 
-  spread(outcome,value) %>% 
-  mutate(  QALY_prevent = QALY_prevent - QALY_natural_history,
-           QALY_treat = QALY_treat - QALY_natural_history,
-           QALY_prevent_treat = QALY_prevent_treat - QALY_natural_history) %>% 
-    select(approach, QALY_natural_history, QALY_prevent, QALY_treat, QALY_prevent_treat) %>% 
-    mutate(approach = factor(approach,levels = c("Markov Trace","Transition States","Healthy Longevity"))) %>% 
-    arrange(approach) %>% 
-    kable(digits = 3, col.names = c("Approach","QALY (ref.)", "incQALY Prevention","incQALY Treatment","incQALY Prevention and Treatment")) %>% 
-    kable_styling()
+# What Explains the Difference
 
+```{r}
+#| tbl-cap: |
+#|  "Last Ten Cycles of Markov Trace"
+#| label: tbl-lastten
+trace1$natural_history %>% as_tibble()  %>% 
+  mutate(Alive = Healthy + CVD)  %>% 
+  select(Alive, DeathOC, DeathCVD)  %>% 
+  mutate(cycle = row_number()) %>% 
+  select(cycle,everything()) %>% 
+  tail(n = 10) %>% 
+  kable(digits = 3) %>% 
+  kable_styling()
 ```
