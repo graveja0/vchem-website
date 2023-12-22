@@ -3,6 +3,7 @@
     "listing": "/index.html",
     "items": [
       "/blog/posts/dalys/modeling-dalys.html",
+      "/blog/posts/modeling-dalys/modeling-dalys.html",
       "/blog/posts/mvpf-evpi/mvpf-evpi.html",
       "/blog/posts/mvpf-evppi/mvpf-evppi.html",
       "/blog/posts/mvpf-evsi/mvpf-evsi.html"
@@ -11,6 +12,7 @@
   {
     "listing": "/blog/index.html",
     "items": [
+      "/blog/posts/modeling-dalys/modeling-dalys.html",
       "/blog/posts/dalys/modeling-dalys.html",
       "/blog/posts/mvpf-evsi/mvpf-evsi.html",
       "/blog/posts/mvpf-evpi/mvpf-evpi.html",
