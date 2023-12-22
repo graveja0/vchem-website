@@ -19,7 +19,6 @@ image: "media/DALY-image.svg"
 editor: 
   markdown: 
     wrap: 72
-lightbox: auto
 ---
 
 ```{r setup}
@@ -1373,6 +1372,44 @@ as.matrix(tr) %>%
 
 ```
 
+### Years Lost Due to Disability (YLD)
+
+To calculate YLDs in a given cycle, we multiply state occupancy by a disability weight payoff vector $\mathbf{d}$,
+
+$$
+\mathbf{d}=\left[\begin{array}{c}
+0 \\
+\text{dw}_{CVD} \big ( \frac{1}{r_{\Delta_t}}(1-e^{-r_{\Delta_t}}) \Delta_t \big ) \\
+0 \\
+0 
+\end{array}\right]
+$$ where $\texttt{dwS1}$ and $\texttt{dwS2}$ are the disability weights for the Sick and Sicker states, respectively.
+
+### Years of Life Lost (YLL)
+
+YLLs are based on the present value of remaining life expectancy among deaths that occur in each cycle $t$. Define $a(t)$ as the age of the cohort at cycle $t$, i.e., $a(t) = t \cdot \Delta t + a0$, where $a_0$ is the age of the cohort at $t=0$. Define $e(t)=e(a(t))$ as the present value of remaining life expectancy at cycle $t$. Following the GBD continuous time discounting approach, $e(a(t))$ is given by
+
+$$
+e(a(t)) = \frac{1}{r}\big (1 - e^{-rEx(a(t))} \big )
+$$ {#eq-pvEx}
+
+where $Ex(a)$ is the remaining life expectancy at age $a$. $Ex(a)$ is drawn from either an exogenous or an endogenous life table, depending on the objectives of the modeling exercise [@anand2019].
+
+We next define a remaining life expectancy payoff vector at cycle $t$:
+
+$$
+\mathbf{e}(t)=\left[\begin{array}{c}
+0   \\
+0   \\
+0   \\
+0   \\
+\frac{1}{r}\big (1 - e^{-rEx(a(t))} \big )
+\end{array}\right]
+$$
+
+This payoff vector reflects discounting, but only in terms of the present value of remaining life expectancy *at time* $t$.
+
+
 ```{r outcomes1}
 #| code-fold: true
 #| code-summary: Calculate Outcomes
@@ -1724,13 +1761,13 @@ $$
 \end{array}\right)
 $$ where $\mathbf{V}_x$ is the rate matrix for the transitory (i.e.,
 non-absorbing) states and $\mathbf{S}_x$ is the rate matrix for the
-absorbing states. The diagonal of $\mathbf{Q}_x$ is the negative sum of
+absorbing states. The diagonal elements of $\mathbf{Q}_x$ are the negative sum of
 the non-diagonal column elements, thus making the column sums of
 $\mathbf{Q}_x$ zero.
 
-For the defined discrete time step $\Delta_t$, the discrete time
-transition probability matrix $\mathbf{P}$ is obtained by taking the
-matrix exponential of the intensity matrix ($\mathbf{Q}$) multipled by
+For the defined time step $\Delta_t$, the discrete time
+transition probability matrix $\mathbf{P}_x$ is obtained by taking the
+matrix exponential of the intensity matrix ($\mathbf{Q}_x$) multipled by
 the time step ($\Delta_t$):
 
 $$
@@ -2181,10 +2218,7 @@ $$
 
 ### Transition-Based Outcomes
 
-For transition-based outcomes such as YLLs, we adopt the following
-approach.
-
-First, we define the first moment of remaining life expectancy as the
+For transition-based outcomes such as YLLs, we define the first moment of remaining life expectancy as the
 vector $\tilde{\boldsymbol{\eta}}^{\top}$. This vector has dimensions
 $\tau\omega \times 1$ and has the following basic structure:
 
@@ -2209,11 +2243,11 @@ based on the maximum potential life span among humans [@globalburdenofdiseasecol
 
 The distinction between *exogenous* and *endogenous* rewards for YLLs boils down to whether the remaining life expectancy value used originates from *outside* the population under study (i.e., mortality risks used to calculate remaining life expectancy at a given age are independent of the mortality risks of the population being assessed), or not. 
 
-For YLLs based on exogenous life tables, such as the reference life table published by the GBD, we define $\tilde{\boldsymbol{\eta}}^{\top}$ based on the reference life table value at each age. For YLLs based on an endogenous life table, we could simply swap in external life table values, *or* use the model itself to estimate remaining life expectancy for a given age and initial health state. 
+For YLLs based on exogenous life tables, such as the reference life table published by the GBD, we define $\tilde{\boldsymbol{\eta}}^{\top}$ based on the reference life table value at each age. For YLLs based on an endogenous life table, we could simply swap in external life table values from our country or region of interest, *or* use the model itself to estimate remaining life expectancy for a given age and initial health state. 
 
 To aid in intuition, @tbl-exogenous provides remaining life expectancy values under exogenous and endogenous approaches for our running example. The row structure of this table mimics the structure needed for $\tilde{\boldsymbol{\eta}}^{\top}$---though note that the table only provides values for a subset of ages, not all age classes. 
 
-The column based on exogenous life tables (`Exogenous-Ref. Life Table`) is simply the reference life table life expectancy value as published by the GBD [@globalburdenofdiseasecollaborativenetwork2021]. The column marked `Endogenous-Model` is based on solving for remaining life expectancy using the occupancy based rewards approach discussed above and as outlined in @globalburdenofdiseasecollaborativenetwork2021.[^caswell] Finally, the last column (`Endogenous-Life Table`) uses country-specific life expectancy information (by age) published by the GBD [@globalburdenofdiseasecollaborativenetwork2020a]. In our running example---which has been structured and (roughly) calibrated to match life table data---the values for the Healthy state are very similar under both endogenous approaches.  
+The column based on exogenous life tables (`Exogenous-Ref. Life Table`) is simply the reference life table life expectancy value as published by the GBD [@globalburdenofdiseasecollaborativenetwork2021]. The column marked `Endogenous-Model` is based on solving for remaining life expectancy using the occupancy based rewards approach discussed above.[^caswell] Finally, the last column (`Endogenous-Life Table`) uses country-specific life expectancy information (by age) published by the GBD [@globalburdenofdiseasecollaborativenetwork2020a]. In our running example---which has been structured and (roughly) calibrated to match life table data---the values for the Healthy state are very similar under both endogenous approaches---though in `Endogenous-Model`, life expectancy values for those who start in the CVD health state are strictly lower, owing to the higher mortality rate from disease. 
 
 [^caswell]: This column essentially reproduces the approach to remaining life expectancy as originally conceived in @caswell2021. The only difference is that we use the full rewards-based approach (which allows for partial transitions and half-cycle corrections) rather than solving for the fundamental matrix $\tilde{\mathbf{N}}$ and applying the formula $\tilde{\boldsymbol{\eta}}_{1}^{\top}=\mathbf{1}_{\tau \omega}^{\top} \tilde{\mathbf{N}}$
 
@@ -2410,7 +2444,9 @@ While we have set the annual discount rate to zero for this example, our approac
 
 ## Results
 
-@tbl-outcomes3 adds results based on the healthy longevity approach for comparison. In this table, we calculate YLLs using the exogenous reference life table from the GBD [@globalburdenofdiseasecollaborativenetwork2021]. Remaining life expectancy is identical across approaches, reflecting the fact that we used a half-cycle correction for Approaches 1 and 2, and the Healthy Longevity approach applies a similar half-cycle correction.[^cyclecorrection] YLDs, YLLs and DALYs are also similar across the three methods. 
+@tbl-outcomes3 adds results based on the healthy longevity approach for comparison. In this table, we calculate YLLs using the exogenous reference life table from the GBD [@globalburdenofdiseasecollaborativenetwork2021]. 
+
+Remaining life expectancy is identical across approaches, reflecting the fact that we used a half-cycle correction for Approaches 1 and 2, and the Healthy Longevity approach applies a similar half-cycle correction.[^cyclecorrection] YLDs, YLLs and DALYs are also similar across the three methods. 
 
 [^cyclecorrection]: Had we used a different cycle correction method we would yield slightly different results---but the differences are rarely meaningful for optimal decisions. 
 
@@ -2498,7 +2534,7 @@ $$
 \boldsymbol{\rho}_{m}^{\text {age }}(\text { stage } i)=\left(\mathbf{I}_{\omega} \otimes \mathbf{e}_{i}^{\top}\right) \tilde{\boldsymbol{\rho}}_{m} \quad \omega \times 1,
 $$
 
-[^startage] We could do this using the Markov-traced approaches, too, but we'd need to re-run the model with a new cohort starting at each age. 
+[^startage]: We could do this using the Markov-traced approaches, too, but we'd need to re-run the model with a new cohort starting at each age. 
 
 @fig-dalys-by-age plots the results. 
 
@@ -2552,10 +2588,34 @@ p3 = DALY3_ %>% map(~({
 p3 + p1  / p2
 ```
 
+::: {.callout-important appearance="simple}
 Note that had we employed an annual discount rate in our results, the age-based plots shown in @fig-dalys-by-age are not recommended, as the various later ages would be discounted and would therefore not represent cohorts with different initial agess from the same baseline period. 
+:::
 
 # DALYs Based on Endogenous Life Expectancy
 
+We next explore several approaches for calculating DALYs based on endogenous life expectancy. 
+
+## DALY Shortcut: QALY-like DALY
+
+Some applications and modeling platforms apply a "shortcut" to estimate DALYs by defining a payoff vector that "rewards" time in the sick state using the disability weight (as in the approaches above), and also applies a payoff value of 1 for each cycle spent in the disease-related death state. 
+
+To implement this shortcut we multiply state occupancy in a given cycle by the payoff vector $\mathbf{d_{QALYDALY}}$,
+
+$$
+\mathbf{d_{QALYDALY}}=\left[\begin{array}{c}
+0 \\
+\text{dw}_{CVD} \\
+1.0 \\
+0 
+\end{array}\right]
+$$ where $\text{dwS}$ is the disability weights for CVD. 
+
+:::{.callout-important appearance="simple}
+As we will see in the results below, this approach will yield different results for DALYs because it conflates the model time horizon with life expectancy. A primary issue is that it applies a payoff value of 1.0 to an absorbing state; the number of times this payoff value is applied to the population is purely a function of the time horizon in the model. In other words, we can arbitrarily increase or decrease the estimated contribution of YLLs to DALYs by lengthening or shortening the number of cycles in our model. Since occupancy in an absorbing state will remain positive even if everyone in the cohort has died, we will continue to accrue (or lose) YLLs as we add or subtract cycles to the end of the Markov trace  
+
+We do not face a similar issue when estimating YLDs because if everyone has entered an absorbing state, we are simply multiplying the disability weight by an occupancy value that is essentially zero. 
+:::
 
 
 ```{r calc-endogenous}
