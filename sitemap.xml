@@ -2,7 +2,7 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://graveja0.github.io/vchem-website/about.html</loc>
-    <lastmod>2023-12-15T12:14:44.827Z</lastmod>
+    <lastmod>2023-12-15T12:14:44.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/resources/csabounds/NEWS.html</loc>
@@ -10,46 +10,62 @@
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/drafts/cdfs/estimating-cdfs.html</loc>
-    <lastmod>2023-12-15T12:14:44.828Z</lastmod>
+    <lastmod>2023-12-15T12:14:44.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/drafts/power-simulation/power-simulation.html</loc>
-    <lastmod>2023-12-15T12:14:49.505Z</lastmod>
+    <lastmod>2023-12-15T12:14:49.000Z</lastmod>
+  </url>
+  <url>
+    <loc>https://graveja0.github.io/vchem-website/blog/posts/distribution-functions/distribution-functions.html</loc>
+    <lastmod>2023-11-21T13:08:49.000Z</lastmod>
+  </url>
+  <url>
+    <loc>https://graveja0.github.io/vchem-website/blog/posts/quasi-demeaning/quasi-demeaning.html</loc>
+    <lastmod>2023-10-09T18:30:45.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/posts/mvpf-evpi/mvpf-evpi.html</loc>
-    <lastmod>2023-12-15T12:14:49.514Z</lastmod>
+    <lastmod>2023-12-24T13:08:38.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/posts/modeling-dalys/modeling-dalys.html</loc>
-    <lastmod>2023-12-22T14:49:26.499Z</lastmod>
+    <lastmod>2024-01-10T15:45:07.105Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/index.html</loc>
-    <lastmod>2023-12-15T12:14:44.869Z</lastmod>
+    <lastmod>2023-11-01T11:19:41.000Z</lastmod>
   </url>
   <url>
-    <loc>https://graveja0.github.io/vchem-website/blog/posts/dalys/modeling-dalys.html</loc>
-    <lastmod>2023-12-21T00:16:13.753Z</lastmod>
+    <loc>https://graveja0.github.io/vchem-website/blog/posts/gravity/gravity-discrete-choice.html</loc>
+    <lastmod>2023-12-29T19:28:20.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/posts/mvpf-evsi/mvpf-evsi.html</loc>
-    <lastmod>2023-12-15T12:14:49.521Z</lastmod>
+    <lastmod>2023-12-15T12:14:49.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/posts/mvpf-evppi/mvpf-evppi.html</loc>
-    <lastmod>2023-12-15T12:14:49.517Z</lastmod>
+    <lastmod>2023-12-15T12:14:49.000Z</lastmod>
+  </url>
+  <url>
+    <loc>https://graveja0.github.io/vchem-website/blog/posts/power-mde/power-and-minimum-detectible-effects.html</loc>
+    <lastmod>2023-10-09T18:30:44.000Z</lastmod>
+  </url>
+  <url>
+    <loc>https://graveja0.github.io/vchem-website/blog/drafts/dalys/modeling-dalys.html</loc>
+    <lastmod>2023-12-21T00:16:13.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/drafts/partial-ID-experimental/partial-ID-experimental.html</loc>
-    <lastmod>2023-12-15T12:14:49.493Z</lastmod>
+    <lastmod>2023-12-15T12:14:49.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/drafts/transfinite/transfinite.html</loc>
-    <lastmod>2023-12-15T12:14:44.864Z</lastmod>
+    <lastmod>2023-11-21T13:03:39.000Z</lastmod>
   </url>
   <url>
     <loc>https://graveja0.github.io/vchem-website/blog/index.html</loc>
-    <lastmod>2023-12-15T12:14:44.865Z</lastmod>
+    <lastmod>2023-03-24T14:05:15.000Z</lastmod>
   </url>
 </urlset>
