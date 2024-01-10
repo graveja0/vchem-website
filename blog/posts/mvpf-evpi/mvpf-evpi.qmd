@@ -16,7 +16,7 @@ self-contained: true
 image: "media/noun-scale-1588863.png"
 ---
 
-**Part one** in a three-part series on how teh tools of welfare analysis and decision science can be used to inform the direction, scope,  and design of research and decision-making. 
+**Part one** in a three-part series on how the tools of welfare analysis and decision science can be used to inform the direction, scope,  and design of research and decision-making. 
 
 ```{r setup}
 

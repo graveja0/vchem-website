@@ -799,6 +799,7 @@ params <- list(
     
     dw = 0.041,       # CVD disability weight
     
+    c_H = 0,
     c_Prevent = 10,   # Cycle cost of prevention strategy 
     c_Treat = 500,    # Cycle cost of treatment strategy
     c_CVD = 500,      # Cycle cost of CVD health state
@@ -1418,10 +1419,10 @@ This payoff vector reflects discounting, but only in terms of the present value 
 le_ = with(params1,(matrix(c(1,
               1 ,
               0,
-              0),
+              0) * Delta_t,
             dimnames = list(c(
                 c(tr_names,ab_names)
-            ), c("DW")))
+            ), c("LE")))
 ))
 
 LEt <- trace1 %>% map( ~ ({
@@ -1436,10 +1437,10 @@ LE = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correct
 qaly_ = with(params1,(matrix(c(uH,
               uCVD ,
               0,
-              0),
+              0) * Delta_t,
             dimnames = list(c(
                 c(tr_names,ab_names)
-            ), c("DW")))
+            ), c("UW")))
 ))
 
 QALYt <- trace1 %>% map( ~ ({
@@ -1459,7 +1460,6 @@ yld_ = with(params1,(matrix(c(0,
                 c(tr_names,ab_names)
             ), c("DW")))
 ))
-
 
 YLDt <- trace1 %>% map( ~ ({
     tmp = as.matrix(.x) %*% yld_
@@ -1621,10 +1621,10 @@ trace2 <-
 le_ = with(params2,(matrix(c(1,
               1 ,
               0,
-              0),
+              0) * Delta_t,
             dimnames = list(c(
                 c(tr_names,ab_names)
-            ), c("DW")))
+            ), c("LE")))
 ))
 
 LEt <- trace2 %>% map( ~ ({
@@ -1638,10 +1638,10 @@ LE2 = LEt %>% map(~sum(.x * gen_wcc(params1$omega, method = params1$cycle_correc
 qaly_ = with(params2,(matrix(c(uH,
               uCVD ,
               0,
-              0),
+              0) * Delta_t,
             dimnames = list(c(
                 c(tr_names,ab_names)
-            ), c("DW")))
+            ), c("UW")))
 ))
 
 QALYt <- trace2 %>% map( ~ ({
@@ -2231,7 +2231,7 @@ $$
 \hline \eta_{1 \omega} \\
 \vdots \\
 \eta_{\tau \omega}
-\end{array}\right),
+\end{array}\right)
 $$ 
 where $\eta_{i x}$ is remaining life expectancy for an individual in
 health state $i$ at a given age $x$. In this structure, remaining life expectancy for each health state is grouped within age classes. 
@@ -2603,18 +2603,28 @@ Some applications and modeling platforms apply a "shortcut" to estimate DALYs by
 To implement this shortcut we multiply state occupancy in a given cycle by the payoff vector $\mathbf{d_{QALYDALY}}$,
 
 $$
-\mathbf{d_{QALYDALY}}=\left[\begin{array}{c}
-0 \\
+\mathbf{d}_{QALYDALY} = 
+\left[
+\begin{array}{c}
+0.0 \\
 \text{dw}_{CVD} \\
-1.0 \\
-0 
-\end{array}\right]
-$$ where $\text{dwS}$ is the disability weights for CVD. 
+0.0 \\
+1.0 
+\end{array}
+\right]
+\begin{array}{l}
+\text{Healthy} \\
+\text{CVD} \\
+\text{DeathOC} \\
+\text{DeathCVD} \\
+\end{array}
+$$
+where $\text{dw}_{CVD}$ is the disability weight for CVD. 
 
 :::{.callout-important appearance="simple}
 As we will see in the results below, this approach will yield different results for DALYs because it conflates the model time horizon with life expectancy. A primary issue is that it applies a payoff value of 1.0 to an absorbing state; the number of times this payoff value is applied to the population is purely a function of the time horizon in the model. In other words, we can arbitrarily increase or decrease the estimated contribution of YLLs to DALYs by lengthening or shortening the number of cycles in our model. Since occupancy in an absorbing state will remain positive even if everyone in the cohort has died, we will continue to accrue (or lose) YLLs as we add or subtract cycles to the end of the Markov trace  
 
-We do not face a similar issue when estimating YLDs because if everyone has entered an absorbing state, we are simply multiplying the disability weight by an occupancy value that is essentially zero. 
+We do not face a similar issue when estimating YLDs because if everyone has entered an absorbing state, we are simply multiplying the disability weight by a (living) health state occupancy value that is essentially zero. 
 :::
 
 

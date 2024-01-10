@@ -1,0 +1,29 @@
+---
+title: "On the Equivalence of Gravity and Discrete Choice Models"
+author: John Graves
+date: "2023-12-29"
+categories: [Health Economics]
+editor_options: 
+  chunk_output_type: console
+execute:
+  echo: true
+  message: false
+  warning: false  
+  code-fold: true
+  freeze: auto 
+bibliography: "references.bib"
+reference-location: margin
+self-contained: true
+image: "media/DALY-image.svg"
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+# Introduction
+
+# Data
+
+## Hospital Location Data
+
+
