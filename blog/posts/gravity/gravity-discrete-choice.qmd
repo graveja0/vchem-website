@@ -1,7 +1,7 @@
 ---
 title: "On the Discrete Choice of Health Care Providers"
-subtitle: "Part 1: The Equivalence of Utility Maximization and Gravity Model Frameworks"
-author: John Graves
+subtitle: "Introduction"
+author: John A. Graves, Ph.D.
 date: "2023-01-16"
 categories: [Health Economics]
 editor_options: 
@@ -21,70 +21,214 @@ editor:
     wrap: 72
 ---
 
-Suppose you are a patient requiring treatment from a hospital. Suppose further that you have three nearby hospitals (A, B and C)‌ to choose among. What considerations do you take into account when making your treatment choice?
+::: {.callout-tip appearance="minimal"}
+Funding for this work is graciously acknowledged from the Arnold
+Foundation.
+:::
 
-Modeling consumer choice has a long history in economics. The dominant approach remains anchored in utilitarian welfare maximization theory. Beginning with @mcfadden1973conditional, economists matched utility maximization-based micro-foundations with the econometric/statistical concepts of maximum likelihood to yield a tractable approach to estimating discrete choice models. These models, including the multinomial logit other valuable extensions, have served as the bedrock estimation approach for consumer and discrete choice for a generation+ of economists. 
+```{r setup}
+#| echo: false
+library(tidyverse)
+library(here)
+library(glue)
+library(janitor)
+#quarto preview index.qmd --to html --no-watch-inputs --no-browse
+```
 
-Medical geography and health services research, on the other hand, have approached the provider choice question from a different perspective. In those literatures, another popular method conceptualizes choice as the outcome from patients weighing the “attractiveness“‌ of different options. In the context of hospital choice, the relative attractiveness of one facility over another is based on patients weighing their own attributes (e.g., age, acuity, etc.), as well as those of the hospital (e.g., quality), against other ”frictions“‌ (e.g., travel time or distance)‌ that influence their choices. 
+Suppose you are a patient requiring treatment from a hospital. Suppose
+further that you have three nearby hospitals (A, B and C) to choose
+among. What considerations do you take into account when making your
+treatment choice?
 
-While these two approaches share some commonalities (e.g., the use of patient and hospital attributes, as well as distance, as key features of the underlying choice problem) they are also conceptually different. Discrete choice theory and its estimation assumptions/methods are rooted in micro-economic principles, while so-called “gravity models” are adapted from physics—specifically, a re-conceptualization of Newton’s Law of Gravitation, which states that the force between two objects (patients and hospitals) is directly proportional to their mass (i.e., their “attractiveness”) and inversely proportional to the distance between them.[^trade] 
+Models of consumer choice among competing alternatives have a long history
+in economics. The dominant approach remains anchored in utilitarian
+welfare maximization theory. Beginning with @mcfadden1973conditional,
+economists matched (random) utility maximization-based micro-foundations with the
+econometric/statistical concepts of maximum likelihood to yield a
+tractable approach to estimating discrete choice models. These models,
+including the conditional logit other valuable extensions, have served
+as the bedrock estimation approach for consumer and discrete choice for
+a generation+ of economists.
 
-[^trade]: Gravity models do have a noteworthy lineage within economics, as well. However, their use has flourished primarily in international trade and not in consumer/discrete choice theory. 
+Medical geography and health services research, on the other hand, have
+approached the provider choice question from an additional perspective. In addition
+to utility maximization frameworks,  another popular method conceptualizes choice as the outcome from patients weighing the "attractiveness" of different options. In the
+context of hospital choice, the relative attractiveness of one facility
+over another is based on patients weighing their own attributes (e.g.,
+age, acuity, etc.), as well as those of the hospital (e.g., quality),
+against other "frictions" (e.g., travel time or distance) that 
+influence their choices.
 
-In this post, we resurrect a forty-year-old paper in transportation research (@anas1983) that demonstrates the equivalence between the multinomial logit and a gravity model. In other words, for a given set of patient and provider attributes, a multinomial logit and a gravity model will yield identical predicted choice probabilities. 
+While these two approaches share some commonalities (e.g., the use of
+patient and hospital attributes, as well as distance, as key features of
+the underlying choice problem) they are also conceptually different.
+Discrete choice theory and its estimation assumptions/methods are rooted
+in micro-economic principles, while so-called “gravity models” are
+adapted from physics—specifically, a re-conceptualization of Newton’s
+Law of Gravitation, which states that the force between two objects
+(patients and hospitals) is directly proportional to their mass (i.e.,
+their “attractiveness”) and inversely proportional to the squared distance
+between them.[^1]
 
-Bridging these two approaches proves useful because it provides a nice foundation for thinking about how to specify a discrete choice problem. In a simulated example, we’ll consider the choice of hospital in the context of privately insured patients who face higher cost-sharing if they are treated (in a nonemergency)‌ at an out-of-network facility. Conceptually, the patient’s plan-level attributes will contribute as an additional source of “friction” on hospital choice. In other words, all else equal, a patient may prefer a nearby facility that is of high (perceived)‌ quality. But if that facility is out-of-network, the patient may not even consider it for treatment; it may as well be 1,000 miles away. 
+[^1]: Gravity models do have a noteworthy lineage within economics, as
+    well. However, their use has flourished primarily in international
+    trade and not in consumer/discrete choice theory.
 
+In this post, we resurrect a forty-year-old paper in transportation
+research (@anas1983) that demonstrates the equivalence between the
+multinomial logit and a gravity model.[^followon] In other words, for
+a given set of patient and provider attributes, a multinomial logit and
+a gravity model will yield identical predicted choice probabilities.
 
+[^followon]: The equivalence was also established later in the statistics literature, in @denzau1989bayesian, @soofi1992generalizable and @ggolan1996maximum.  
 
+Bridging these two approaches proves useful because it provides a nice
+foundation for thinking about how to specify a discrete choice problem.
+In a simulated example, we’ll consider the choice of hospital in the
+context of privately insured patients who face higher cost-sharing if
+they are treated (in a nonemergency) at an out-of-network facility.
+Conceptually, the patient’s plan-level attributes will contribute as an
+additional source of “friction” or impedence son hospital choice. In other words, all
+else equal, a patient may prefer a nearby facility that is of high
+(perceived) quality. But if that facility is out-of-network, the patient
+may not even consider it for treatment; it may as well be 1,000 miles
+away.
+
+This series is organized 
 
 <!-- https://cran.r-project.org/web/packages/gravity/vignettes/crash-course-on-gravity-models.html -->
-<!-- https://www.sciencedirect.com/science/article/abs/pii/B9780444543141000033?via%3Dihub DOUBLE DEMEANING-->
-<!-- https://journals.sagepub.com/doi/pdf/10.1177/1536867X1501500210 -->
 
+<!-- https://www.sciencedirect.com/science/article/abs/pii/B9780444543141000033?via%3Dihub DOUBLE DEMEANING-->
+
+<!-- https://journals.sagepub.com/doi/pdf/10.1177/1536867X1501500210 -->
 
 # Information Theory and Discrete Choice
 
-An alternative way of conceptualizing a choice problem is through information and decision theory; this approach will eventually serve as the foundation for a gravity model of discrete choice later. 
+One way to conceptualize a choice problem is through information and
+decision theory; this approach will eventually serve as the foundation
+for a gravity model of discrete choice.
 
-Information theory grew out of seminal work by Claude Shannon in 1948, and is arguably one of the most important intellectual contributions in the 20th century, if not all of human history [@shannon1948mathematical]. Information theory serves as the backbone for modern digital communication, guiding how data are stored and transmitted across the internet, cell phones, and satellite systems. It is also used widely in artificial intelligence and machine learning. 
+Information theory grew out of seminal work by Claude Shannon in 1948,
+and is arguably one of the most important intellectual contributions in
+the 20th century, if not all of human history
+[@shannon1948mathematical]. Information theory serves as the backbone
+for modern digital communication, informing how data are most
+efficiently compressed and transmitted across the internet, cell phones,
+and satellite systems.
 
-A key concept of information theory is the idea of entropy, or the degree of uncertainty or randomness in a set of data. Shannon’s measure of entropy quantifies the amount of information in a message, data source, or (for our purposes here)  choice among alternatives. 
+A key concept of information theory is the idea of entropy, or the
+degree of uncertainty or randomness in a set of data. Shannon’s measure
+of entropy quantifies the amount of information in a message, data
+source, or (for our purposes here) choice among alternatives
+$h \in \text{A},\text{B},\text{C}$,
 
-In the context of the choice over three hospitals, our objective is to account for features or attributes of the choice problem that provide information on the decision. Then, conditional on this information, we want to find the choice probabilities that maximize entropy or uncertainty in the decisions. 
+$$
+\mathscr{E} = -\sum_{h} P^h \log_b P^h
+$$ {#eq-entropy0} where $p^k$ is the probability of observing outcome
+$h$, and $\log_b$ is the logarithm to the base $b$. It is common to use
+a base of 2 (under which entropy is measured in bits), or using the
+natural logarithm (i.e., base $e$; in this case entropy is measured in
+"nats").
 
-![Decision Tree for Entropy Example](media/decision-tree.png){#fig-decisiontree fig-align="center" width="50%"}
+In the context of patients $j$ selecting hospitals, we will adopt a
+natural logarithm base and re-write @eq-entropy0 as
 
+$$
+\mathscr{E} = - \bigg ( \sum_h \sum_{j} P_j^h \log P_j^h \bigg )
+$$ {#eq-entropy}
 
-```{r, eval = FALSE}
+We can now think of features of the decision problem that help guide
+choices. These features provide information on the decision. We want to
+account for the pieces of information we can measure and then find the
+choice probabilities that maximize the remaining entropy in the decision
+problem.
+
+For example, if we know that patients with certain attributes are more
+likely to choose hospital A or B over C, then we can account for this
+information in our model. The top of the decision tree in
+@fig-decisiontree, for example, shows the choices of 40 individuals in a
+hypothetical population. Applying @eq-entropy above, the entropy of the
+overall decision problem is 1.46.
+
+```{r}
 #| code-fold: true
-#| code-summary: Reproduce the entropy example
+#| code-summary: Code for overall entropy
 #| 
-# Entropy example for figure
 set.seed(123)
-X <- paste0(sample(c("A","B","C"),size=20,replace=TRUE,prob=c(.05,.15,.8)),collapse="")
-X <- paste0(X,paste0(sample(c("A","B","C"),size=20,replace=TRUE,prob=c(.8,.15,.05)),collapse=""),collapse="")
-X_ <- table(unlist(strsplit(X,"")))/40; X_
--sum(X_*log(X_,2))
-
-x <- substr(X,1,20)
-x_ <- table(unlist(strsplit(x,"")))/20
--sum(x_*log(x_,2))
-
-x <- substr(X,21,40)
-x_ <- table(unlist(strsplit(x,"")))/20
--sum(x_*log(x_,2))
-
+P_0 = c(.05,.15,.8)
+P_1 = c(.8,.15,.05)
+P <- paste0(sample(c("A","B","C"),size=20,replace=TRUE,prob=P_0),collapse="")
+P <- paste0(P,paste0(sample(c("A","B","C"),size=20,replace=TRUE,prob=P_1),collapse=""),collapse="")
+P_ <- table(unlist(strsplit(P,"")))/40
+e = -sum(P_*log(P_,2))
 ```
 
+Suppose, however, that we observe that patients with a certain attribute
+(e.g., $X=1$) were more likley to select A and B, while those without
+the attribute $X=0$) are more likely to select C. The bottom branches of
+the decision tree in @fig-decisiontree split out the full population
+into two groups based on the value of $X$, and re-calculate the measure
+of entropy for each.
 
+In this simple example, we have accounted for a piece of information
+(i.e., $X$) that reduces the overall entropy of the decision scenario.
+
+![Decision Tree for Entropy
+Example](media/decision-tree.png){#fig-decisiontree fig-align="center"
+width="50%"}
+
+```{r}
+#| code-fold: true
+#| code-summary: Code for lower branches of decision tree
+#| 
+p0 <- substr(P,1,20)
+p0_ <- table(unlist(strsplit(p0,"")))/20
+e0 = -sum(p0_*log(p0_,2))
+
+p1 <- substr(P,21,40)
+p1_ <- table(unlist(strsplit(p1,"")))/20
+e1 = -sum(p1_*log(p1_,2))
+```
+
+Building on this example, our modeling objective is to minimize the
+amount of information in the decision problem by accounting for
+observable features or attributes that help explain patient choices. We
+aim to do so subject to several constraints:
+
+1.  The sum of patient choice probabilities ($P_j^h$) must equal one
+    (i.e., each patient must choose one hospital).
+2.  The sum of patient choice probabilities for each hospital must equal
+    the total number of patients observed as treated there.
+3.  The expectation of the aggregate value of each attribute $k$ (i.e.,
+    $X_{jk}^h$) must equal the observed aggregate value. In
+    @fig-decisiontree, for example, we observe 20 individuals with
+    attribute $X=0$ and 20 with $X=1$.
+
+```{r,eval = FALSE}
+x <- c(rep(0, 20), rep(1, 20))
+c("A", "B", "C") %>% map( ~ ({
+    as.numeric(strsplit(P, "")[[1]] == .x) * x
+})) %>%
+    map_dbl( ~ sum(.x)) %>% 
+    set_names(c("A","B","C"))
+
+P_j = 
+    map2(P_0,P_1,~({
+    (x==0)*.x + (x==1)*.y
+    }))
+
+P_j %>% map(~({
+    .x * x
+})) %>% 
+    map(~(sum(.x)))
+```
 
 # Gravity Model
 
 $$
 \underset{\left[P_j^h\right]}{\operatorname{Minimize}}-\mathscr{E}=\sum_h \sum_j P_j^h \log P_j^h
-$$
-subject to:
+$$ subject to: 
+
 $$
 \begin{gathered}
 \sum_j P_j^h=1 ; \quad h=1 \ldots H \\
@@ -192,6 +336,7 @@ df_zip <-
 ```
 
 ## AHA Data
+
 ```{r, eval = FALSE}
 # Load hospital location data.
 aha_files <- c(
@@ -281,39 +426,50 @@ names(coef(fit))[-1] %>% map(~({
 
 ```
 
-
 <!-- # Introduction -->
 
 <!-- We begin by specifying a discrete choice model for patient i selecting -->
+
 <!-- hospital h, though h can also represent the choice of a physician. To -->
+
 <!-- ease expositional burden, we suppress indexing by time and disease -->
+
 <!-- category, though in practice we will fit separate choice models for each -->
+
 <!-- combination of Medicare population (TM, MA) and year. Using a standard -->
+
 <!-- discrete choice framework, we specify the patient’s utility as -->
 
 <!-- $$ -->
+
 <!-- u_{i h}=\alpha_0+\alpha_1 X_i+\alpha_2 Q_h+\alpha_3 \log \left(t_{i h}\right)+v_{i h} -->
+
 <!-- $$ {#eq-utility} -->
 
 <!-- where $X_i$ capture patient-level attributes (e.g., demographics, -->
+
 <!-- comorbidities, etc.), $Q_h$ capture hospital-level attributes (e.g., -->
+
 <!-- measures of clinical quality), $t_{ih}=D_{ih}^2$, the squared -->
+
 <!-- distance/travel time (D_ih) between i and h, and $v_{ih}$ is an -->
+
 <!-- idiosyncratic error term. -->
 
 <!-- It can be shown (and we have verified in preliminary analyses) that Eq. -->
+
 <!-- 2 is equivalent to a gravity model in which the “forces” governing -->
+
 <!-- patients’ selection of providers are informed by individual and facility -->
+
 <!-- characteristics and the gravitational “pull” of geographically proximate -->
+
 <!-- facilities.[@anas1983] -->
 
 <!-- $$ -->
+
 <!-- F_{i h}=G \frac{\widetilde{X_i}^{\alpha_1} \widetilde{Q_h}^{\alpha_2}}{t_{i h}^{-\alpha_3}} -->
+
 <!-- $$ #{eq-gravity} where $\widetilde{X_i}=exp(X_i)$, $\widetilde{Q_i}=exp(Q_i)$ and $G$ is a constant.  -->
 
-
 <!-- Under the information-maximizing approach, we want to define a model tha thas the most random predictions of indiviudal choices that are consistent with observeations in teh real world. So if 75% of patients are observed to go to A, the information-minimizing (entropy maximizing) choice probabilities shoudl be 0.75 [A] and 0.25 [B].  -->
-
-
-
-
