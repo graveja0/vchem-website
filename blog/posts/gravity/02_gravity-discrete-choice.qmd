@@ -16,7 +16,7 @@ execute:
 bibliography: "references.bib"
 reference-location: margin
 self-contained: true
-image: "media/DALY-image.svg"
+image: "media/gravity-icon.png"
 editor: 
   markdown: 
     wrap: 72

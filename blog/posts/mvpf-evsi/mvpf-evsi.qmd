@@ -23,15 +23,15 @@ image: "media/sampling-figure.png"
 
 # Introduction
 
-Earlier posts in this series (see [part one](../mvpf-evpi/index.qmd) and [part two](../mvpf-evppi/index.qmd)) discussed using recent developments in comparative welfare analysis and decision theory to determine the value of future research to guide a policymaker's decision to implement a social policy change.
+Earlier posts in this series (see [part one](../mvpf-evpi/mvpf-evpi.qmd) and [part two](../mvpf-evppi/mvpf-evppi.qmd)) discussed using recent developments in comparative welfare analysis and decision theory to determine the value of future research to guide a policymaker's decision to implement a social policy change.
 
 In the presence of uncertainty in current knowledge, and given a summary measure of social preferences ($\lambda$),[^1] we covered two key concepts:
 
 [^1]: Specifically, we defined $\lambda$ as the the minimal marginal value of public funds (MVPF) necessary to adopt a social policy change.
 
-1.  [The **expected value of perfect information (EVPI)**](../mvpf-evpi/index.qmd) quantifies the welfare-valued opportunity cost of making the "wrong" decision based on current information. The EVPI tells us, for a given value of $\lambda$, the value of obtaining perfect information on all uncertain MVPF parameters.
+1.  [The **expected value of perfect information (EVPI)**](../mvpf-evpi/mvpf-evpi.qmd) quantifies the welfare-valued opportunity cost of making the "wrong" decision based on current information. The EVPI tells us, for a given value of $\lambda$, the value of obtaining perfect information on all uncertain MVPF parameters.
 
-2.  [The **expected value of partial perfect information (EVPPI)**](../mvpf-evppi/index.qmd) quantifies the degree to which individual MVPF parameters (or subsets of parameters) contribute to the overall EVPI. Calculating the EVPPI for a given policy decision problem allows us to align future research efforts around parameters with the highest information value to make an informed decision.
+2.  [The **expected value of partial perfect information (EVPPI)**](../mvpf-evppi/mvpf-evppi.qmd) quantifies the degree to which individual MVPF parameters (or subsets of parameters) contribute to the overall EVPI. Calculating the EVPPI for a given policy decision problem allows us to align future research efforts around parameters with the highest information value to make an informed decision.
 
 As noted in the earlier posts, these concepts are fundamentally theoretical---they key off of the idea that we obtain *perfect* information on all (EVPI) or some (EVPPI) parameters that inform an estimate of the MVPF.
 
@@ -130,7 +130,7 @@ As we see in @tbl-current, current knowledge tells us that the policy may result
 
 Our first guidepost is to make sure that *any* future research would help inform our policymaker's decision.[^6] To assess this, we estimate the EVPI for various societal willingness-to-pay parameter ($\lambda$) values. @fig-evpi summarizes this exercise.
 
-[^6]: We covered the EVPI in detail in [part one](../mvpf-evpi/index.qmd) of this series, however both the formulas and code are provided here for the example at hand.
+[^6]: We covered the EVPI in detail in [part one](../mvpf-evpi/mvpf-evpi.qmd) of this series, however both the formulas and code are provided here for the example at hand.
 
 ::: {.callout-note collapse="true"}
 ## EVPI Equations and Notation (click to expand)
@@ -206,9 +206,9 @@ p
 
 ## Expected Value of Partial Perfect Information
 
-Our next task is to prioritize future research around efforts to obtain information on parameter(s) with high information value. To do this, we will take probabilistic draws from the joint uncertainty distribution of the MVPF paramters in @tbl-current and [fit flexible metamodels](../mvpf-evppi/index.qmd) for each parameter, with the calculated net welfare benefit as the outcome.[^8]
+Our next task is to prioritize future research around efforts to obtain information on parameter(s) with high information value. To do this, we will take probabilistic draws from the joint uncertainty distribution of the MVPF paramters in @tbl-current and [fit flexible metamodels](../mvpf-evppi/mvpf-evppi.qmd) for each parameter, with the calculated net welfare benefit as the outcome.[^8]
 
-[^8]: Details on how to do this are provided in [part two](../mvpf-evppi/index.qmd).
+[^8]: Details on how to do this are provided in [part two](../mvpf-evppi/mvpf-evppi.qmd).
 
 ::: {.callout-note collapse="true"}
 ## EVPPI Equations and Notation
