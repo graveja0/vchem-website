@@ -12,6 +12,7 @@ execute:
   warning: false  
   code-fold: true
   freeze: auto 
+  cache: true
 bibliography: "references.bib"
 reference-location: margin
 self-contained: true
@@ -21,15 +22,14 @@ editor:
     wrap: 72
 ---
 
-# Introduction
-
-This is the second part of a series of posts on the discrete choice of health care providers. In the first part, we introduced the gravity model of spatial interaction and showed how it can be used to model the discrete choice of health care providers. In this post, we will simulate a data generating process (DGP) for a gravity model of spatial interaction. We will then use this simulated data to estimate the parameters of the model using maximum likelihood estimation (MLE).
-
-
+::: {.callout-tip appearance="minimal"}
+Funding for this work is graciously acknowledged from Arnold
+Ventures.
+:::
 
 ```{r setup}
 #| code-fold: true
-#| code-summary: Setup code
+#| code-summary: Setup R Session
 #| message: false
 #| warning: false
 
@@ -91,7 +91,11 @@ map_multicore <- function(.x, .f, ..., .id = NULL) {
 }
 ```
 
-## Location Data
+# Introduction
+
+## Paramterize the Data Generation Process
+
+Our first step is to define the data generation process. We begin with location data on 22 ZIP codes and 101 hospitals in Tennessee. The latitude and longitude coordinates of each are provided in the code below. This information will be used later when we calculate distances between patient $i$'s residential geography ($g(i)$)  and hospital ($h$). 
 
 ```{r locations}
 #| code-fold: true
@@ -234,7 +238,9 @@ loc <-
 location_ <- unique(loc$zip)
 ```
 
-## Paramterize the Data Generation Process
+We next paramaterize the data generation process (DGP). The parameter vector `mu` includes the "true" value of the coefficients that will later govern our DGP. We assume that in addition to distance from home, patients highly value hospital quality ($Q_h$) in their selections. In addition, patient attributes ($X_i$) also inform hospital choice, though to a lesser extent. 
+
+Later, we will conceptualize the idea of a provider network exerting additional frictions on the choice of hospital; this will come into play with the parameters on out-of-network HMO and PPO plans. 
 
 ```{r}
 params <- list(
@@ -247,19 +253,22 @@ params <- list(
               mu_q_h = 6,    # coef on hospital attribute
               mu_d_gh = -1,  # coef of distance
               mu_hmo_not_in_network = 5,  # coef on out-of-network HMO
-              mu_ppo_not_in_network = 3), # coef on out-of-network PPO
-    eta = list(eta_intercept = -1,
-               eta_h_k = 10),
-    beta_q_h = .05
+              mu_ppo_not_in_network = 3)  # coef on out-of-network PPO
 )
 ```
 
-
 ## Define the Data Generation Process
+
+We begin by specifying a discrete choice model for patient $i$ selecting hospital $h$. We first consider the case where the patient is unrestricted by a provider network (e.g., as in traditional Medicare);  Using a standard random utility framework, we specify the patient’s utility as 
+
+$$
+u_{i h}=\alpha_0+\alpha_1 X_i+\alpha_2 Q_h+\alpha_3 \log \left(t_{i h}\right)+v_{i h}
+$$ {#eq-randutility0}
+where $X_i \sim N(0,1)$ capture patient-level attributes (e.g., demographics, comorbidities, etc.), $Q_h\sim N(0,1)$ capture hospital-level attributes (e.g., measures of clinical quality), $t_{ih} = D_{g(i)h}^2$, the squared distance/travel time ($D_{g(i)h}$) between patient $i$'s geographic location (i.e., $g(i)$) and $h$, and $v_{ih}$  is an idiosyncratic error term. 
 
 ```{r}
 #| code-fold: true
-#| code-summary: Define a function to generate hospital attributes
+#| code-summary: Define functions to generate hospital attributes and distance.
 #| 
 generate_hospital_attributes <- function(params) {
  with(params,{
@@ -271,15 +280,6 @@ generate_hospital_attributes <- function(params) {
 }
 
 hosp_ <- params %>% generate_hospital_attributes()
-hosp_ %>% 
-    head(n = 5) %>% 
-    flextable() %>% 
-    theme_vanilla()
-```
-
-```{r}
-#| code-fold: true
-#| code-summary: Define a function to calculate distance between patients and hospitals
 
 generate_distance_data <- function(params, hosp_data) {
      with(params,{
@@ -298,12 +298,11 @@ generate_distance_data <- function(params, hosp_data) {
 }
 
 dist_ <- params %>% generate_distance_data(hosp_data = hosp_)
-dist_ %>% 
-    head(n = 5) %>% 
-    flextable() %>% 
-    theme_vanilla()
-           
 ```
+
+Later on, we'll consider the role of provider networks in shaping hospital choice. To do this, we'll assume patients are randomly assigned to one of 20 health plans that share 10 total provider networks.[^nets] Health plans offer both generous out-of-network coverage ("PPO") or restrictive out-of-network coverage ("HMO"). 
+
+[^nets]: It is not uncommon for health plans to share the same network and differentiate across other dimensions (e.g., deductibles and cost-sharing). 
 
 ```{r}
 #| code-fold: true
@@ -342,10 +341,6 @@ generate_network_data <- function(params, hosp_data) {
 
 net_ <- params %>% generate_network_data(hosp_data = hosp_)
 
-net_ %>% 
-    head(n=5) %>% 
-    flextable()
- 
 generate_plan_data <- function(params, network_data) {
      with(params,{
          
@@ -369,17 +364,17 @@ generate_plan_data <- function(params, network_data) {
 }
 
 plan_ <- params %>% generate_plan_data(network_data = net_)
-     
-plan_ %>% 
-    head(n=5) %>% 
-    flextable()
 ```
 
 ## Combine Hospital, Patient, Plan and Network Attributes
 
+With the above functions and data defined, we combine them all together into a "long" dataset of patients, their hospital choice set, and various patient-, plan-, hospital-, and patient-hospital-level attributes. @tbl-attributes shows the first five rows of simulated data. 
+
 ```{r}
 #| code-fold: true
 #| code-summary: Construct final attribute data
+#| tbl-cap: First five rows of simulated data
+#| label: tbl-attributes
 
 combine_attributes <- function(params,hosp_data, location_data , dist_data, plan_data, network_data) {
     with(params,{
@@ -418,9 +413,71 @@ df_choice %>%
     flextable()
 ```
 
-## Gravity Model
+## Calculate Choice Probabilities
+
+Our next step is to draw on the DGP specified in @eq-randutility0 to calculate choice probabilities for each alternative. 
+
+### Random Utility Framework
+
+The function `derive_choice_probabilities_utility()` takes as inputs the parameters and data defined above and applies @eq-randutility0 to calculate these probabilities. 
 
 ```{r}
+#| code-fold: true
+#| code-summary: Derive choice probabilities from random utility framework
+#| message: false
+#| warning: false
+
+derive_choice_probabilities_utility <- function(params, df, network = TRUE) {
+    with(params, {
+        if (network) {
+            df %>%
+                mutate(
+                    u_ih = mu$intercept + mu$mu_x_i * x_i + mu$mu_q_h * q_h + mu$mu_d_gh * log(d_gh ^2) + 
+                           mu$mu_d_gh * mu$mu_ppo_not_in_network * not_in_network * (1 - hmo) + 
+                           mu$mu_d_gh * mu$mu_hmo_not_in_network * not_in_network * hmo 
+                ) %>%
+                mutate(u_ih = exp(u_ih)) %>% 
+                group_by(patient_id) %>%
+                mutate(pr_u = round(u_ih / sum(u_ih),3)) %>%
+                arrange(patient_id, desc(pr_u)) %>% 
+                select(patient_id,hosp_id, u_ih, pr_u)
+        } else {
+             df %>%
+                mutate(
+                    u_ih = mu$intercept + mu$mu_x_i * x_i + mu$mu_q_h * q_h + mu$mu_d_gh * log(d_gh^2) 
+                ) %>%
+                mutate(u_ih = exp(u_ih)) %>% 
+                group_by(patient_id) %>%
+                mutate(pr_u = round(u_ih / sum(u_ih),3)) %>%
+                arrange(patient_id, desc(pr_u)) %>% 
+                select(patient_id,hosp_id, u_ih, pr_u)
+        }
+        
+    })
+}
+
+choice_utility <- 
+    params %>% derive_choice_probabilities_utility(df = df_choice, network = FALSE) 
+```
+
+
+### Gravity Model
+
+We have shown in earlier blog posts that the random utility framework (@eq-randutility0) can be cast in terms of a gravity model,
+
+$$
+F_{i h}=G \frac{\widetilde{X_i}^{\alpha_1} \widetilde{Q_h}^{\alpha_2}}{t_{i h}^{-\alpha_3}}
+$$ {#eq-gravity0}
+where $G$ is a normalizing constant, $\widetilde{X_i} = \exp(X_i)$, and $\widetilde{Q_h} = \exp(Q_h)$.
+
+The function `derive_choice_probabilities_gravity()` takes as its inputs the parameters and data defined above and applies @eq-gravity0 to calculate these probabilities.
+
+```{r}
+#| code-fold: true
+#| code-summary: Derive choice probabilities from gravity model framework
+#| message: false
+#| warning: false
+
 derive_choice_probabilities_gravity <- function(params, df, network=TRUE) {
     with(params, {
         if (network) {
@@ -447,47 +504,17 @@ choice_gravity <-
     params %>% derive_choice_probabilities_gravity(df = df_choice, network = FALSE) 
 ```
 
+### Comparison of Choice Probabilities
 
-## Utility Maximization
+We now demonstrate the equivalence of these two approaches in @tbl-compare.[^restrict] We see that the choice probabilities `pr_g` and `pr_u` are identical.
 
-```{r}
-derive_choice_probabilities_utility <- function(params, df, network = TRUE) {
-    with(params, {
-        if (network) {
-            df %>%
-                mutate(
-                    u_ih = mu$intercept + mu$mu_x_i * x_i + mu$mu_q_h * q_h + mu$mu_d_gh * log(d_gh ^2) + 
-                           mu$mu_d_gh * mu$mu_ppo_not_in_network * not_in_network * (1 - hmo) + 
-                           mu$mu_d_gh * mu$mu_hmo_not_in_network * not_in_network * hmo 
-                ) %>%
-                mutate(u_ih = exp(u_ih)) %>% 
-                group_by(patient_id) %>%
-                mutate(pr_u = round(u_ih / sum(u_ih),3)) %>%
-                arrange(patient_id, desc(pr_u)) %>% 
-                select(patient_id,hosp_id, u_ih, pr_u)
-        } else {
-             df %>%
-                mutate(
-                    u_ih = mu$intercept + mu$mu_x_i * x_i + mu$mu_q_h * q_h + mu$mu_d_gh * log(d_gh ^2) 
-                ) %>%
-                mutate(u_ih = exp(u_ih)) %>% 
-                group_by(patient_id) %>%
-                mutate(pr_u = round(u_ih / sum(u_ih),3)) %>%
-                arrange(patient_id, desc(pr_u)) %>% 
-                select(patient_id,hosp_id, u_ih, pr_u)
-        }
-        
-    })
-}
-
-choice_utility <- 
-    params %>% derive_choice_probabilities_utility(df = df_choice, network = FALSE) 
-```
-
+[^restrict]: To avoid a large number of rows where the choice probability is low due the hospital being hundreds of miles away, we limit the observations shown in  @tbl-compare to those within a close distance to each patient.
 
 ```{r}
 #| code-fold: true
 #| code-summary: Construct table
+#| tbl-cap: Comparison of Choice Probabilities Under Random Utility and Gravity Model Frameworks in Simulated Data
+#| label: tbl-compare
 
 choice_gravity %>% 
     left_join(choice_utility,c("patient_id","hosp_id")) %>% 
@@ -495,15 +522,24 @@ choice_gravity %>%
     head(n=10) %>% 
     flextable(col_keys = c("patient_id","hosp_id","tmp1","t_ih","f_ih","pr_g","tmp2","u_ih","pr_u")) %>% 
     theme_vanilla() %>% 
-    add_header_row(values = c("","","Gravity Model","","Utility Maximization"),colwidths = c(2,1,3,1,2)) %>% 
+    add_header_row(values = c("","","Gravity","","Random Utility"),colwidths = c(2,1,3,1,2)) %>% 
     empty_blanks() 
 ```
 
 
 # Simulate
 
+Our data generation functions are now nearly complete. However, after the steps above we have only defined the *probability* that a simulated patient chooses each alternative. We now round our our DGP simulation code by randomly selecting a hospital for each patient based on these probabilities. 
+
+The entire process is captured in a function `simulate_dgp()` that simulates data (including hospital choices) under the DGP defined above. The function has an option for which choice framework (random utility, gravity) the data are generated under---though of course, as we saw above, both will yield identical choice probabilities. To be comprehensive, however, we will simulate two datasets with a common random seed to avoid stochastic differences between them: one under the random utility framework (@eq-randutility0) and one dataset under the gravity model framework (@eq-gravity0). 
+
 ```{r}
-simulate_dgp <- function(params, has_network = TRUE, max_distance = 50) {
+#| code-fold: true
+#| code-summary: Data generation process simulation function code
+#| message: false
+#| warning: false
+
+simulate_dgp <- function(params, has_network = TRUE, max_distance = 50, framework = "gravity") {
     hosp_ <- params %>% generate_hospital_attributes()
     dist_ <- params %>% generate_distance_data(hosp_data = hosp_)
     net_ <- params %>% generate_network_data(hosp_data = hosp_)
@@ -515,19 +551,32 @@ simulate_dgp <- function(params, has_network = TRUE, max_distance = 50) {
             dist_data = dist_,
             plan_data = plan_,
             network_data = net_)  
-    
-    tmp <-
-        params %>% derive_choice_probabilities_gravity(df = df_choice, network = has_network)  %>%
-        group_by(patient_id) %>%
-        mutate(runif = runif(1)) %>%
-        mutate(cum_pr = cumsum(pr_g)) %>%
-        mutate(cum_pr = ifelse(row_number() == n(), 1, cum_pr)) %>%
-        mutate(cum_pr0 = ifelse(row_number() == 1, 0, lag(cum_pr, 1))) %>%
-        rowwise() %>%
-        mutate(selected = as.integer(between(runif, cum_pr0, cum_pr))) %>%
-        ungroup() %>%
-        select(patient_id, hosp_id, truth = pr_g, selected) 
-    
+    if (framework == "gravity") {
+        tmp <-
+            params %>% derive_choice_probabilities_gravity(df = df_choice, network = has_network)  %>%
+            group_by(patient_id) %>%
+            mutate(runif = runif(1)) %>%
+            mutate(cum_pr = cumsum(pr_g)) %>%
+            mutate(cum_pr = ifelse(row_number() == n(), 1, cum_pr)) %>%
+            mutate(cum_pr0 = ifelse(row_number() == 1, 0, lag(cum_pr, 1))) %>%
+            rowwise() %>%
+            mutate(selected = as.integer(between(runif, cum_pr0, cum_pr))) %>%
+            ungroup() %>%
+            select(patient_id, hosp_id, truth = pr_g, selected) 
+    } else if (framework == "random_utility") {
+        tmp <-
+            params %>% derive_choice_probabilities_utility(df = df_choice, network = has_network)  %>%
+            group_by(patient_id) %>%
+            mutate(runif = runif(1)) %>%
+            mutate(cum_pr = cumsum(pr_u)) %>%
+            mutate(cum_pr = ifelse(row_number() == n(), 1, cum_pr)) %>%
+            mutate(cum_pr0 = ifelse(row_number() == 1, 0, lag(cum_pr, 1))) %>%
+            rowwise() %>%
+            mutate(selected = as.integer(between(runif, cum_pr0, cum_pr))) %>%
+            ungroup() %>%
+            select(patient_id, hosp_id, truth = pr_u, selected) 
+    }
+
     df_choice %>% 
         left_join(tmp,c("patient_id","hosp_id")) %>% 
         ungroup() %>% 
@@ -544,40 +593,353 @@ simulate_dgp <- function(params, has_network = TRUE, max_distance = 50) {
         filter(max_choice == 1) %>% ungroup()
 }
 
-df <- params %>%
-    simulate_dgp(has_network = FALSE) 
+set.seed(623)
+df_gravity <- params %>%
+    simulate_dgp(has_network = FALSE, framework = "gravity") 
+set.seed(623)
+df_utility <- params %>%
+    simulate_dgp(has_network = FALSE, framework = "random_utility") 
+
+# Collect results
+df_res <- 
+    df_gravity %>% select(patient_id,hosp_id,truth)
+```
+
+# Estimate 
+
+We have several estimation options. First, we will consider the conditional logit as executed using the `mlogit` package in R. 
+
+The `mlogit()` command requires that the data first be pre-processed:
+
+```{r}
+df_cl_utility <- 
+    df_utility %>% 
+    select(patient_id, hosp_id, selected, d_gh,q_h) %>% 
+    dfidx(.)
+```
+
+We next fit the data with patient and hospital fixed effects. 
+
+```{r}
+fit_cl_utility = 
+    mlogit(selected ~ log(d_gh^2), data =df_cl_utility)
 ```
 
 ```{r}
-df_res <- 
-    df %>% select(patient_id,hosp_id,truth)
+#| code-fold: true
+#| code-summary: Table code
 
-# Conditional Logit with Hospital and Patient Fixed Effects
-fit_cl <- clogit(selected ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id), data = df,method=c("efron"), robust = TRUE,
-                 control = coxph.control(iter.max = 1000))
-coef_fit_cl <- fit_cl %>% tidy()
-df_res$p_choice_cl <- predict(fit_cl,type="expected")
+fit_cl_utility %>% tidy() %>% 
+    filter(!grepl("Intercept",term)) %>% 
+    flextable() %>% 
+    flextable::add_footer_lines("Note: Coefficients on hospital fixed effects suppressed from table.")
+```
 
-# Thought experiment: estimate the instantaneous hazard
-fit_cox <- coxph(formula = Surv(rep(1, nrow(df)), selected) ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id), 
-      data = df, method = "efron")
-coef_fit_cox <- fit_cox %>% tidy()
-baseline_hazard <- basehaz(fit_cox) %>% as_tibble() %>% janitor::clean_names() %>% select(-time)
-df_res$linear_predictor <- predict(fit_cox, type = "lp")
-df_res$strata = model.frame(fit_cox) %>% as_tibble() %>% janitor::clean_names() %>% pull(strata_patient_id)
-df_res <- df_res %>% left_join(baseline_hazard,"strata")
-#df_res$p_choice_cox <- predict(fit_cox,type="expected")
+Another option--to the extent we can measure all relevant hospital-level attributes (which we do here)---is to include hospital-level predictors intead of hospital fixed effects:
+
+```{r}
+fit_clx_utility = 
+    mlogit(selected ~ log(d_gh^2) + q_h | 0, data =df_cl_utility)
+```
+
+```{r}
+#| code-fold: true
+#| code-summary: Table code
+fit_clx_utility %>% tidy() %>% 
+    flextable() 
+```
+
+Note that the estimated coefficients are quite close to the "truth" as defined in the `params` object above. 
+
+We also obtain identical answers using the data simulated under the gravity model framework:
+
+```{r}
+#| code-fold: true
+#| code-summary: Fit mlogit using gravity model data. 
+
+df_cl_gravity <- 
+    df_gravity %>% 
+    select(patient_id, hosp_id, selected, d_gh, q_h) %>% 
+    dfidx(.)
+
+fit_cl_gravity = 
+    mlogit(selected ~ log(d_gh^2), data =df_cl_gravity)
+
+fit_cl_gravity %>% tidy() %>% 
+    filter(!grepl("Intercept",term)) %>% 
+    flextable() %>% 
+    flextable::add_footer_lines("Note: Coefficients on hospital fixed effects suppressed from table.")
+
+fit_clx_gravity = 
+    mlogit(selected ~ log(d_gh^2) + q_h | 0, data =df_cl_gravity)
+
+fit_clx_gravity %>% tidy() %>% 
+    flextable() 
+```
+
+## Discrete Choice Using Cox Proportional Hazard Models
+
+It has been shown (@gail1981likelihood) that the log-likelihood of a conditional logit is equivalent to that of a Cox proportional hazards model under a specific data structure. Intuitively, we can think of our choice problem as a matched case-control study where the cases are the chosen hospitals and the controls are the unchosen hospitals. We can re-cast our data as a case-control at a single time point, and fit a Cox proportional hazards model to estimate the instantaneous "hazard" of selecting each alternative as a function of covariates. In addition, we stratify the Cox model by `patient_id`, which effectively fits a patient fixed effect [@allison2014event].
+
+```{r}
+fit_cox_gravity <-
+    coxph(
+        formula =
+            Surv(rep(1, nrow(df_gravity)), selected) ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id),
+        data = df_gravity,
+        method = "efron",
+        robust = TRUE
+    )
+
+fit_cox_utility <-
+    coxph(
+        formula =
+            Surv(rep(1, nrow(df_gravity)), selected) ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id),
+        data = df_utility,
+        method = "efron",
+        robust = TRUE
+    )
+```
+
+```{r}
+#| code-fold: true
+#| code-summary: Table code
+fit_cox_utility %>% 
+    tidy() %>% 
+    filter(!grepl("hosp_id",term)) %>% 
+    mutate_at(vars(-term),~round(.,3)) %>% 
+    flextable() %>% 
+    flextable::add_footer_lines("Note: Coefficients on hospital fixed effects suppressed from table.")
+
+```
+
+@tbl-comparison summarizes all the above and shows clearly that the gravity model and random utility frameworks--as estimated with a conditional logit *or* using a Cox model, yield identical coefficient values.
+
+```{r}
+#| code-fold: true
+#| code-summary: Construct table
+#| message: false
+#| warning: false
+#| tbl-cap: Comparison of Estimates Under Alternative Data Generation (Gravity, Random Utility) Processes and Estimation (conditional logit, Cox) Approaches
+#| label: tbl-comparison
+
+# Note: mlogit::mlogit() does not handle predicted values super well (which we'll look at later), so re-fitting using survival::clogit() instead; this yields identical results. 
+
+fit_cl_gravity <-
+    clogit(selected ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id),
+           data = df_gravity,
+           method=c("efron"),
+           robust = TRUE)
+df_res$cl_gravity <- predict(fit_cl_gravity,type="expected")
+
+fit_clx_gravity <- 
+    clogit(selected ~  q_h + log(d_gh^2) + strata(patient_id) , 
+           data = df_gravity, 
+           method = c("efron"), 
+           robust = TRUE)
+
+fit_cl_utility <- 
+    clogit(selected ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id), 
+           data = df_utility,
+           method=c("efron"), 
+           robust = TRUE)
+df_res$cl_utility <- predict(fit_cl_utility,type="expected")
+
+fit_clx_utility <- 
+    clogit(selected ~  q_h + log(d_gh^2) + strata(patient_id) , 
+           data = df_utility, 
+           method = c("efron"), 
+           robust = TRUE)
+
+
+tmp_ <- fit_cl_gravity %>% tidy() %>% 
+    filter(grepl("d_gh|q_h",term)) %>% 
+    select(term, estimate,se = std.error) %>% 
+    mutate(hosp_fixed = "X", patient_fixed = "X", framework = "Gravity", spec = "CL")  %>% 
+    mutate(estimate = glue("{round(estimate,3)}")) %>% 
+    mutate(se = glue("({round(se,3)})"))  %>% 
+    mutate(n = row_number(), N = n()) %>% 
+    gather(measure,value,-term,-n,-N) %>% 
+    filter(measure == "estimate" | measure=="se" | (measure !="estimate" & measure != "se" & (n==N))) %>% 
+    mutate(term = ifelse(measure!="estimate" & measure!="se","",term))           %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    arrange(term,measure) %>% 
+    rename(cl_gravity = value) %>% 
+    select(-n,-N)
+
+
+tmp2_ <- fit_clx_gravity %>% tidy() %>% 
+    filter(grepl("d_gh|q_h",term)) %>% 
+    select(term, estimate,se = std.error) %>% 
+    mutate(hosp_fixed = "-", patient_fixed = "X", framework = "Gravity", spec = "CL")  %>% 
+    mutate(estimate = glue("{round(estimate,3)}")) %>% 
+    mutate(se = glue("({round(se,3)})"))  %>% 
+    mutate(n = row_number(), N = n()) %>% 
+    gather(measure,value,-term,-n,-N) %>% 
+    filter(measure == "estimate" | measure=="se" | (measure !="estimate" & measure != "se" & (n==N))) %>% 
+    mutate(term = ifelse(measure!="estimate" & measure!="se","",term))           %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"q_h")) %>%    
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    arrange(term,measure) %>% 
+    rename(clx_gravity = value) %>% 
+    select(-n,-N)
+
+tmp2.b_ <- fit_cox_gravity %>% tidy() %>% 
+    filter(grepl("d_gh|q_h",term)) %>% 
+    select(term, estimate,se = robust.se) %>% 
+    mutate(hosp_fixed = "-", patient_fixed = "X", framework = "Gravity", spec = "Cox")  %>% 
+    mutate(estimate = glue("{round(estimate,3)}")) %>% 
+    mutate(se = glue("({round(se,3)})"))  %>% 
+    mutate(n = row_number(), N = n()) %>% 
+    gather(measure,value,-term,-n,-N) %>% 
+    filter(measure == "estimate" | measure=="se" | (measure !="estimate" & measure != "se" & (n==N))) %>% 
+    mutate(term = ifelse(measure!="estimate" & measure!="se","",term))           %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    arrange(term,measure) %>% 
+    rename(cox_gravity = value) %>% 
+    select(-n,-N)
+
+tmp3_ <- 
+    fit_cl_utility %>% tidy() %>% 
+    filter(grepl("d_gh|q_h",term)) %>% 
+    select(term, estimate,se = std.error) %>% 
+    mutate(hosp_fixed = "X", patient_fixed = "X", framework = "Random Utility", spec = "CL")  %>% 
+    mutate(estimate = glue("{round(estimate,3)}")) %>% 
+    mutate(se = glue("({round(se,3)})"))  %>% 
+    mutate(n = row_number(), N = n()) %>% 
+    gather(measure,value,-term,-n,-N) %>% 
+    filter(measure == "estimate" | measure=="se" | (measure !="estimate" & measure != "se" & (n==N))) %>% 
+    mutate(term = ifelse(measure!="estimate" & measure!="se","",term))           %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    arrange(term,measure) %>% 
+    rename(cl_utility = value) %>% 
+    select(-n,-N)
+
+tmp3.b_ <- 
+    fit_cox_utility %>% tidy() %>% 
+    filter(grepl("d_gh|q_h",term)) %>% 
+    select(term, estimate,se = robust.se) %>% 
+    mutate(hosp_fixed = "X", patient_fixed = "X", framework = "Random Utility", spec = "Cox")  %>% 
+    mutate(estimate = glue("{round(estimate,3)}")) %>% 
+    mutate(se = glue("({round(se,3)})"))  %>% 
+    mutate(n = row_number(), N = n()) %>% 
+    gather(measure,value,-term,-n,-N) %>% 
+    filter(measure == "estimate" | measure=="se" | (measure !="estimate" & measure != "se" & (n==N))) %>% 
+    mutate(term = ifelse(measure!="estimate" & measure!="se","",term))           %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    arrange(term,measure) %>% 
+    rename(cox_utility = value) %>% 
+    select(-n,-N)
+
+
+tmp4_ <- fit_clx_utility %>% tidy() %>% 
+    filter(grepl("d_gh|q_h",term)) %>% 
+    select(term, estimate,se = std.error) %>% 
+    mutate(hosp_fixed = "-", patient_fixed = "X", framework = "Random Utility", spec = "CL")  %>% 
+    mutate(estimate = glue("{round(estimate,3)}")) %>% 
+    mutate(se = glue("({round(se,3)})"))  %>% 
+    mutate(n = row_number(), N = n()) %>% 
+    gather(measure,value,-term,-n,-N) %>% 
+    filter(measure == "estimate" | measure=="se" | (measure !="estimate" & measure != "se" & (n==N))) %>% 
+    mutate(term = ifelse(measure!="estimate" & measure!="se","",term))           %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"q_h")) %>%    
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    arrange(term,measure) %>% 
+    rename(clx_utility = value) %>% 
+    select(-n,-N)
+
+res_table <- 
+    tmp_ %>% 
+    full_join(tmp2_,c("term","measure")) %>% 
+    full_join(tmp2.b_,c("term","measure")) %>% 
+    full_join(tmp3_,c("term","measure")) %>% 
+    full_join(tmp3.b_,c("term","measure")) %>% 
+    full_join(tmp4_,c("term","measure")) %>% 
+    select(term,measure,cl_gravity,cl_utility,cox_gravity,cox_utility,clx_gravity,clx_utility) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"q_h")) %>%    
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    select(measure,term,everything()) %>% 
+    
+    mutate(measure = factor(measure)) %>% 
+    mutate(measure = fct_recode(measure,  "Hospital Fixed Effects" = "hosp_fixed", "Patient Fixed Effects" = "patient_fixed",
+                                "Choice Framework for Data Generation Process" = "framework", "Specification" = "spec")) %>% 
+    mutate(measure = coalesce(measure,term)) %>% 
+    mutate(term = ifelse(measure=="se","",paste0(term))) %>% 
+    mutate(measure = ifelse(measure %in% c("estimate","se"),"",paste0(measure))) %>% 
+    mutate(measure = paste0(measure,term)) %>% 
+    select(-term) 
+
+res_table %>% 
+    mutate(Truth = with(params, sprintf("%.1f",c(mu$mu_d_gh,NA,mu$mu_q_h,NA,NA,NA,NA,NA)))) %>% 
+    mutate(Truth = ifelse(is.na(Truth)|Truth=="NA","",Truth)) %>% 
+    flextable() %>% 
+    width(j = 1, width=2)  %>% 
+    set_header_labels(
+    measure = "",
+    cl_gravity= "(1)",
+    cl_utility = "(2)",
+    cox_gravity = "(3)",
+    cox_utility = "(4)",
+    clx_gravity = "(5)",
+    clx_utility = "(6)")
+```
+
+```{r}
+#| code-fold: true
+#| code-summary: Construct figure
+#| message: false
+#| warning: false
+#| label: tbl-predicted
+#| tbl-cap:  Predicted Choice Probabilities vs. Truth
+
+baseline_hazard_gravity <- basehaz(fit_cox_gravity) %>% as_tibble() %>% janitor::clean_names() %>% select(-time) %>% rename(hazard_gravity = hazard, strata_gravity = strata)
+baseline_hazard_utility <- basehaz(fit_cox_gravity) %>% as_tibble() %>% janitor::clean_names() %>% select(-time) %>% rename(hazard_utility = hazard,
+                                                                                                                            strata_utility = strata)
+df_res$lp_cox_gravity <- predict(fit_cox_gravity, type = "lp")
+df_res$lp_cox_utility <- predict(fit_cox_utility, type = "lp")
+df_res$strata_gravity = model.frame(fit_cox_gravity) %>% as_tibble() %>% janitor::clean_names() %>% pull(strata_patient_id)
+df_res$strata_utility = model.frame(fit_cox_utility) %>% as_tibble() %>% janitor::clean_names() %>% pull(strata_patient_id)
 df_res <- 
-    df_res %>% mutate(p_choice_cox = exp(linear_predictor)*hazard) %>% 
+    df_res %>% left_join(baseline_hazard_gravity,"strata_gravity") %>% 
+    left_join(baseline_hazard_utility,"strata_utility")
+
+foo <- 
+    df_res %>% 
+    mutate(cox_gravity = exp(lp_cox_gravity)*hazard_gravity) %>% 
+    mutate(cox_utility = exp(lp_cox_utility)*hazard_utility) %>% 
     group_by(patient_id) %>% 
-    mutate(p_choice_cox = p_choice_cox/sum(p_choice_cox))  %>% 
-    select(patient_id,hosp_id,truth,p_choice_cl,p_choice_cox)
+    mutate(cox_gravity = cox_gravity/sum(cox_gravity))  %>% 
+    mutate(cox_utility = cox_utility/sum(cox_utility))  %>% 
+    select(patient_id,hosp_id,truth,cl_gravity,cl_utility,cox_gravity,cox_utility)
 
-df_res %>% 
+foo %>% 
     gather(model,p_choice,-patient_id,-hosp_id,-truth) %>% 
-    mutate(model = case_when(model=="p_choice_cl" ~ "Conditional Logit",
-                             model=="p_choice_cox" ~ "Cox Proportional Hazards")) %>% 
-    ggplot(aes(x = truth, y = p_choice, colour = model)) + geom_smooth() + 
+    mutate(model = case_when(model=="cl_gravity" ~ "Conditional Logit - Gravity",
+                             model=="cl_utility" ~ "Conditional Logit - Random Utillity",
+                             model=="cox_gravity" ~ "Cox Proportional Hazards - Gravity",
+                             model=="cox_utility" ~ "Cox Proportional Hazards - Random Utility")) %>% 
+    ggplot(aes(x = truth, y = p_choice, colour = model)) + #geom_smooth() + 
     hrbrthemes::theme_ipsum() + 
     geom_abline(intercept = 0, slope = 1, lty=2) + 
     theme(legend.position = "bottom") + 
@@ -585,91 +947,8 @@ df_res %>%
     labs(x = "Chioce Probability: Truth", y = "Choice Probability: Prediccted") + 
     geom_point(alpha=0.2)
 
-
-#basehaz(fit_cox) %>% as_tibble() 
-#model.frame(fit_cox) %>% 
-#    as_tibble()
-# coef_fit_cl %>% filter(grepl("d_gh",term))
-# coef_fit_cox %>% filter(grepl("d_gh",term))
-
-# Conditional Logit with  Patient Fixed Effects and Hospital Attributes
-fit_clx <- clogit(selected ~  q_h + log(d_gh^2) + strata(patient_id) , data = df, method = c("efron"), robust = TRUE)
-coef_fit_clx <- fit_clx %>% tidy()
 ```
 
-# Scratch
-
-```{r, eval = FALSE}
-est_choice <- function(df) {
-    suppressWarnings({clogit(selected ~ factor(hosp_id) + log(d_gh^2) +  I(not_in_network*(1-hmo)) + I(not_in_network*hmo) + strata(patient_id), data = df,method=c("efron"), robust = TRUE)})
-}
-
-
-fit <- df %>% est_choice()
-
-df$p_select = predict(fit, type="expected", newdata = df)
-
-df %>% 
-    ggplot(aes( x= truth, y = p_select)) + geom_point()
-    
-fit %>% broom::tidy() %>% filter(!grepl("hosp_id",term))
-
-
-df_net <- params %>% simulate_dgp(has_network=TRUE) %>% filter(d_gh <50) %>% select(patient_id, x_i,hosp_id, q_h, selected, d_gh, not_in_network,hmo, truth)  %>% 
-    group_by(patient_id) %>% mutate(max_choice = max(selected)) %>% filter(max_choice==1)
-fit_net <- df_net %>% est_choice()
-
-# df_net$p_select = predict(fit_net, type="expected", newdata = df_net)
-# 
-# df_net %>% 
-#     ggplot(aes( x= truth, y = p_select)) + geom_point()
-#     
-# fit_net %>% broom::tidy() %>% filter(!grepl("hosp_id",term))
-# 
-# coef(fit_net)["I(not_in_network * hmo)"]/coef(fit_net)["log(d_gh^2)"]
-# coef(fit_net)["I(not_in_network * (1 - hmo))"]/coef(fit_net)["log(d_gh^2)"]
-# exp(coef(fit_net)["I(not_in_network * (1 - hmo))"]*coef(fit_net)["log(d_gh^2)"])
-# exp(coef(fit_net)["I(not_in_network * hmo)"]*coef(fit_net)["log(d_gh^2)"])
-
-```
-
-# To cite
-
-Michell H Gail, Jay H Lubin and Lawrence V Rubinstein. Likelihood calculations for matched case-control studies and survival studies with tied death times. Biometrika 68:703-707, 1980.
-
-
-The statement from the clogit documentation in the survival package in R highlights an interesting connection between conditional logistic regression (used for discrete choice models) and the Cox proportional hazards model (used in survival analysis). Let's delve into this relationship:
-
-Conditional Logistic Regression
-
-Purpose: Conditional logistic regression is designed for matched case-control studies. In such studies, each "case" (an event of interest) is matched with one or more "controls" (similar instances where the event did not occur).
-
-Modeling Approach: The model estimates the effect of different variables on the probability of being a case, conditional on the matched set.
-
-Cox Proportional Hazards Model
-
-Purpose: The Cox model is used in survival analysis to investigate the effect of various factors on the time to an event (like death, failure, etc.).
-
-Modeling Framework: It models the hazard (the instantaneous event rate) as a function of a set of covariates without needing to specify the baseline hazard function.
-
-The Connection
-
-Log-Likelihood Equivalence: The log-likelihood of a conditional logistic regression model is equivalent to that of a Cox proportional hazards model under a specific data structure. This equivalence is intriguing because, on the surface, the two models serve different purposes - one for matched case-control data and the other for time-to-event data.
-
-Data Structure: The particular data structure refers to organizing the matched case-control data in a way that is analogous to survival data. In this structure:
-
-Each matched set in the conditional logistic model is treated like a "strata" in a Cox model.
-
-The "event" in the Cox model corresponds to the case in the conditional logistic setup.
-
-Time is not a factor in the analysis (or is treated as constant), as the focus is on the case-control comparison within each matched set.
-
-Mathematical Derivation: Proving the equivalence involves showing that the partial likelihoods used in both models are the same under this data arrangement. The partial likelihood in the Cox model, which typically accounts for censoring and time-to-event, simplifies in this context to focus on the binary outcome (case vs. control) within strata.
-
-Implications: This equivalence is beneficial because it allows for the use of Cox model computational techniques and software to fit conditional logistic regression models. It's a surprising and elegant example of how different statistical models can converge under certain conditions.
-
-Conclusion
-
-The equivalence between the conditional logistic regression and Cox proportional hazards models under specific conditions is a fascinating example of the interplay between different statistical methodologies. It demonstrates the versatility of statistical models and how a deep understanding of their underlying mathematics can lead to innovative applications across different types of data and research questions.
+# References
 
 

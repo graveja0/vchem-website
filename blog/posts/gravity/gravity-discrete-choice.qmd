@@ -22,8 +22,8 @@ editor:
 ---
 
 ::: {.callout-tip appearance="minimal"}
-Funding for this work is graciously acknowledged from the Arnold
-Foundation.
+Funding for this work is graciously acknowledged from Arnold
+Ventures.
 :::
 
 ```{r setup}
@@ -74,11 +74,12 @@ between them.[^1]
     well. However, their use has flourished primarily in international
     trade and not in consumer/discrete choice theory.
 
-In this post, we resurrect a forty-year-old paper in transportation
-research (@anas1983) that demonstrates the equivalence between the
-multinomial logit and a gravity model.[^followon] In other words, for
-a given set of patient and provider attributes, a multinomial logit and
-a gravity model will yield identical predicted choice probabilities.
+In this blog series, we resurrect a forty-year-old paper in transportation
+research (@anas1983) to demonstrate the equivalence between the
+conditional logit and a gravity model.[^followon] In other words, for
+a given set of patient and provider attributes, a conditional logit and
+a gravity model will yield identical predicted choice probabilities. 
+
 
 [^followon]: The equivalence was also established later in the statistics literature, in @denzau1989bayesian, @soofi1992generalizable and @ggolan1996maximum.  
 
