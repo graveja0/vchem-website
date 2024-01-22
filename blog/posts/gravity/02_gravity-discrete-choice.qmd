@@ -93,7 +93,7 @@ map_multicore <- function(.x, .f, ..., .id = NULL) {
 
 # Introduction
 
-## Paramterize the Data Generation Process
+## Parameterize the Data Generation Process
 
 Our first step is to define the data generation process. We begin with location data on 22 ZIP codes and 101 hospitals in Tennessee. The latitude and longitude coordinates of each are provided in the code below. This information will be used later when we calculate distances between patient $i$'s residential geography ($g(i)$)  and hospital ($h$). 
 

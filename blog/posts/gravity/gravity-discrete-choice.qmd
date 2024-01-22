@@ -1,6 +1,6 @@
 ---
 title: "On the Discrete Choice of Health Care Providers"
-subtitle: "Part 1: Introduction"
+subtitle: "Part 1: The Equivalence Between Random Utility and Gravity Model Frameworks for Discrete Choice"
 author: John A. Graves, Ph.D.
 date: "2023-01-16"
 categories: [Health Economics]

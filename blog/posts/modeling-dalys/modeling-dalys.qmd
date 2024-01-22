@@ -21,6 +21,11 @@ editor:
     wrap: 72
 ---
 
+::: {.callout-tip appearance="minimal"}
+Support for this work is graciously acknowledged from the [Data to Policy](https://www.d4hdataimpact.org/data-to-policy) initiative administered by Vital Strategies and funded by Bloomberg Philanthropies and the CDC Foundation. 
+:::
+
+
 ```{r setup}
 #| code-fold: true
 #| code-summary: Setup R session
