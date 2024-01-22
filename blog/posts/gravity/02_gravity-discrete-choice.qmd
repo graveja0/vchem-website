@@ -1,8 +1,8 @@
 ---
 title: "On the Discrete Choice of Health Care Providers"
-subtitle: "Part TK: Simulating A DGP"
+subtitle: "Part 2: Estimating on Simulated Data"
 author: John A. Graves, Ph.D.
-date: "2023-01-16"
+date: "2023-01-20"
 categories: [Health Economics]
 editor_options: 
   chunk_output_type: console

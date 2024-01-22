@@ -1053,7 +1053,7 @@ tib %>%
 
 # NOte the following is a debugging station for a model where I set the rate of progression
 # to the disease to zero, effectively making this a simple mortality model. 
-# These are teh rates used
+# These are the rates used
 # rHS1 = 0.00,
 # rD = 0.5,
 # rS1S2 = 0,
