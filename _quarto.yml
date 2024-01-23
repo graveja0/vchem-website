@@ -7,7 +7,6 @@ project:
     - "*.pptx"
 
 website:
-  title: "Vanderbilt Center for Health Economic Modeling"
   margin-footer: |
     ![](./CHEMlogo_white.png)
   sidebar:
@@ -15,7 +14,12 @@ website:
     search: false
     collapse-level: 1
     contents:
-      - index.qmd
+      - href: https://www.vumc.org/center-for-health-economic-modeling/
+        text: Center Website (VUMC)
+      - href: index.qmd
+        text: Center Blog
+      - href: https://graveja0.github.io/health-care-markets/
+        text: Defining Markets for Health Care Services (Github)
  
 filters:
    - lightbox
