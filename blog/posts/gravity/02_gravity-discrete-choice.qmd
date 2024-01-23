@@ -27,6 +27,13 @@ Funding for this work is graciously acknowledged from Arnold
 Ventures.
 :::
 
+
+# Introduction
+
+## Parameterize the Data Generation Process
+
+Our first step is to define the data generation process. We begin with location data on 22 ZIP codes and 101 hospitals in Tennessee. The latitude and longitude coordinates of each are provided in the code below. This information will be used later when we calculate distances between patient $i$'s residential geography $g(i)$ and each hospital $h$ in the choice set. 
+
 ```{r setup}
 #| code-fold: true
 #| code-summary: Setup R Session
@@ -90,12 +97,6 @@ map_multicore <- function(.x, .f, ..., .id = NULL) {
     furrr::future_map(.x, f, ..., .id = .id)
 }
 ```
-
-# Introduction
-
-## Parameterize the Data Generation Process
-
-Our first step is to define the data generation process. We begin with location data on 22 ZIP codes and 101 hospitals in Tennessee. The latitude and longitude coordinates of each are provided in the code below. This information will be used later when we calculate distances between patient $i$'s residential geography ($g(i)$)  and hospital ($h$). 
 
 ```{r locations}
 #| code-fold: true
@@ -635,7 +636,7 @@ fit_cl_utility %>% tidy() %>%
     flextable::add_footer_lines("Note: Coefficients on hospital fixed effects suppressed from table.")
 ```
 
-Another option--to the extent we can measure all relevant hospital-level attributes (which we do here)---is to include hospital-level predictors intead of hospital fixed effects:
+Another option---to the extent we can measure all relevant hospital-level attributes (which we do here)---is to include hospital-level predictors rather than hospital fixed effects:
 
 ```{r}
 fit_clx_utility = 
@@ -649,7 +650,7 @@ fit_clx_utility %>% tidy() %>%
     flextable() 
 ```
 
-Note that the estimated coefficients are quite close to the "truth" as defined in the `params` object above. 
+Note that the estimated coefficients are quite close to the "truth" as defined in the `params` object above (i.e., `r params$mu$mu_d_gh` and `r params$mu$mu_q_h`).
 
 We also obtain identical answers using the data simulated under the gravity model framework:
 
@@ -679,7 +680,7 @@ fit_clx_gravity %>% tidy() %>%
 
 ## Discrete Choice Using Cox Proportional Hazard Models
 
-It has been shown (@gail1981likelihood) that the log-likelihood of a conditional logit is equivalent to that of a Cox proportional hazards model under a specific data structure. Intuitively, we can think of our choice problem as a matched case-control study where the cases are the chosen hospitals and the controls are the unchosen hospitals. We can re-cast our data as a case-control at a single time point, and fit a Cox proportional hazards model to estimate the instantaneous "hazard" of selecting each alternative as a function of covariates. In addition, we stratify the Cox model by `patient_id`, which effectively fits a patient fixed effect [@allison2014event].
+It has been shown (@gail1981likelihood) that the log-likelihood of a conditional logit is equivalent to that of a Cox proportional hazards model under a specific data structure. Intuitively, we can think of our choice problem as a matched case-control study where the cases are the chosen hospitals and the controls are the unchosen hospitals. We can re-cast our data as a case-control at a single time point, and fit a Cox proportional hazards model to estimate the instantaneous "hazard" of selecting each alternative as a function of covariates. In addition, we stratify the Cox model by `patient_id`, which is analogous to estimating with patient fixed effects [@allison2014event].
 
 ```{r}
 fit_cox_gravity <-
@@ -694,12 +695,13 @@ fit_cox_gravity <-
 fit_cox_utility <-
     coxph(
         formula =
-            Surv(rep(1, nrow(df_gravity)), selected) ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id),
+            Surv(rep(1, nrow(df_utility)), selected) ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id),
         data = df_utility,
         method = "efron",
         robust = TRUE
     )
 ```
+
 
 ```{r}
 #| code-fold: true
@@ -713,7 +715,9 @@ fit_cox_utility %>%
 
 ```
 
+
 @tbl-comparison summarizes all the above and shows clearly that the gravity model and random utility frameworks--as estimated with a conditional logit *or* using a Cox model, yield identical coefficient values.
+
 
 ```{r}
 #| code-fold: true
@@ -751,8 +755,26 @@ fit_clx_utility <-
            method = c("efron"), 
            robust = TRUE)
 
+fit_coxX_gravity <-
+    coxph(
+        formula =
+            Surv(rep(1, nrow(df_gravity)), selected) ~ q_h + log(d_gh^2) + strata(patient_id),
+        data = df_gravity,
+        method = "efron",
+        robust = TRUE
+    )
 
-tmp_ <- fit_cl_gravity %>% tidy() %>% 
+fit_coxX_utility <-
+    coxph(
+        formula =
+            Surv(rep(1, nrow(df_gravity)), selected) ~ q_h + log(d_gh^2) + strata(patient_id),
+        data = df_utility,
+        method = "efron",
+        robust = TRUE
+    )
+
+
+res_cl_gravity <- fit_cl_gravity %>% tidy() %>% 
     filter(grepl("d_gh|q_h",term)) %>% 
     select(term, estimate,se = std.error) %>% 
     mutate(hosp_fixed = "X", patient_fixed = "X", framework = "Gravity", spec = "CL")  %>% 
@@ -771,7 +793,7 @@ tmp_ <- fit_cl_gravity %>% tidy() %>%
     select(-n,-N)
 
 
-tmp2_ <- fit_clx_gravity %>% tidy() %>% 
+res_clx_gravity <- fit_clx_gravity %>% tidy() %>% 
     filter(grepl("d_gh|q_h",term)) %>% 
     select(term, estimate,se = std.error) %>% 
     mutate(hosp_fixed = "-", patient_fixed = "X", framework = "Gravity", spec = "CL")  %>% 
@@ -790,10 +812,10 @@ tmp2_ <- fit_clx_gravity %>% tidy() %>%
     rename(clx_gravity = value) %>% 
     select(-n,-N)
 
-tmp2.b_ <- fit_cox_gravity %>% tidy() %>% 
+res_cox_gravity <- fit_cox_gravity %>% tidy() %>% 
     filter(grepl("d_gh|q_h",term)) %>% 
     select(term, estimate,se = robust.se) %>% 
-    mutate(hosp_fixed = "-", patient_fixed = "X", framework = "Gravity", spec = "Cox")  %>% 
+    mutate(hosp_fixed = "X", patient_fixed = "X", framework = "Gravity", spec = "Cox")  %>% 
     mutate(estimate = glue("{round(estimate,3)}")) %>% 
     mutate(se = glue("({round(se,3)})"))  %>% 
     mutate(n = row_number(), N = n()) %>% 
@@ -808,7 +830,7 @@ tmp2.b_ <- fit_cox_gravity %>% tidy() %>%
     rename(cox_gravity = value) %>% 
     select(-n,-N)
 
-tmp3_ <- 
+res_cl_utility <- 
     fit_cl_utility %>% tidy() %>% 
     filter(grepl("d_gh|q_h",term)) %>% 
     select(term, estimate,se = std.error) %>% 
@@ -827,7 +849,7 @@ tmp3_ <-
     rename(cl_utility = value) %>% 
     select(-n,-N)
 
-tmp3.b_ <- 
+res_cox_utility <- 
     fit_cox_utility %>% tidy() %>% 
     filter(grepl("d_gh|q_h",term)) %>% 
     select(term, estimate,se = robust.se) %>% 
@@ -846,8 +868,45 @@ tmp3.b_ <-
     rename(cox_utility = value) %>% 
     select(-n,-N)
 
+res_coxX_utility <- fit_coxX_utility %>% tidy() %>% 
+    filter(grepl("d_gh|q_h",term)) %>% 
+    select(term, estimate,se = std.error) %>% 
+    mutate(hosp_fixed = "-", patient_fixed = "X", framework = "Random Utility", spec = "Cox")  %>% 
+    mutate(estimate = glue("{round(estimate,3)}")) %>% 
+    mutate(se = glue("({round(se,3)})"))  %>% 
+    mutate(n = row_number(), N = n()) %>% 
+    gather(measure,value,-term,-n,-N) %>% 
+    filter(measure == "estimate" | measure=="se" | (measure !="estimate" & measure != "se" & (n==N))) %>% 
+    mutate(term = ifelse(measure!="estimate" & measure!="se","",term))           %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"q_h")) %>%    
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    arrange(term,measure) %>% 
+    rename(coxX_utility = value) %>% 
+    select(-n,-N)
 
-tmp4_ <- fit_clx_utility %>% tidy() %>% 
+res_coxX_gravity <- fit_coxX_gravity %>% tidy() %>% 
+    filter(grepl("d_gh|q_h",term)) %>% 
+    select(term, estimate,se = std.error) %>% 
+    mutate(hosp_fixed = "-", patient_fixed = "X", framework = "Gravity", spec = "Cox")  %>% 
+    mutate(estimate = glue("{round(estimate,3)}")) %>% 
+    mutate(se = glue("({round(se,3)})"))  %>% 
+    mutate(n = row_number(), N = n()) %>% 
+    gather(measure,value,-term,-n,-N) %>% 
+    filter(measure == "estimate" | measure=="se" | (measure !="estimate" & measure != "se" & (n==N))) %>% 
+    mutate(term = ifelse(measure!="estimate" & measure!="se","",term))           %>% 
+    mutate(term = factor(term)) %>% 
+    mutate(term = fct_relevel(term,"q_h")) %>%    
+    mutate(term = fct_relevel(term,"log(d_gh^2)")) %>% 
+    arrange(term,measure) %>% 
+    mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
+    arrange(term,measure) %>% 
+    rename(coxX_gravity = value) %>% 
+    select(-n,-N)
+
+res_clx_utility <- fit_clx_utility %>% tidy() %>% 
     filter(grepl("d_gh|q_h",term)) %>% 
     select(term, estimate,se = std.error) %>% 
     mutate(hosp_fixed = "-", patient_fixed = "X", framework = "Random Utility", spec = "CL")  %>% 
@@ -867,13 +926,15 @@ tmp4_ <- fit_clx_utility %>% tidy() %>%
     select(-n,-N)
 
 res_table <- 
-    tmp_ %>% 
-    full_join(tmp2_,c("term","measure")) %>% 
-    full_join(tmp2.b_,c("term","measure")) %>% 
-    full_join(tmp3_,c("term","measure")) %>% 
-    full_join(tmp3.b_,c("term","measure")) %>% 
-    full_join(tmp4_,c("term","measure")) %>% 
-    select(term,measure,cl_gravity,cl_utility,cox_gravity,cox_utility,clx_gravity,clx_utility) %>% 
+    res_cl_gravity %>% 
+    full_join(res_clx_gravity,c("term","measure")) %>% 
+    full_join(res_cox_gravity,c("term","measure")) %>% 
+    full_join(res_cl_utility,c("term","measure")) %>% 
+    full_join(res_cox_utility,c("term","measure")) %>% 
+    full_join(res_clx_utility,c("term","measure")) %>% 
+    full_join(res_coxX_gravity,c("term","measure")) %>%     
+    full_join(res_coxX_utility,c("term","measure")) %>%         
+    select(term,measure,cl_gravity,cl_utility,cox_gravity,cox_utility,clx_gravity,clx_utility,coxX_gravity,coxX_utility) %>% 
     mutate(measure = factor(measure, levels = c("estimate","se","hosp_fixed","patient_fixed","framework","spec"))) %>% 
     mutate(term = factor(term)) %>% 
     mutate(term = fct_relevel(term,"q_h")) %>%    
@@ -893,6 +954,8 @@ res_table <-
 res_table %>% 
     mutate(Truth = with(params, sprintf("%.1f",c(mu$mu_d_gh,NA,mu$mu_q_h,NA,NA,NA,NA,NA)))) %>% 
     mutate(Truth = ifelse(is.na(Truth)|Truth=="NA","",Truth)) %>% 
+    mutate(measure = ifelse(measure == "log(d_gh^2)","ln(Distance-squared)",measure)) %>% 
+    mutate(measure = ifelse(measure == "q_h","Hospital quality composite",measure)) %>% 
     flextable() %>% 
     width(j = 1, width=2)  %>% 
     set_header_labels(
@@ -902,8 +965,13 @@ res_table %>%
     cox_gravity = "(3)",
     cox_utility = "(4)",
     clx_gravity = "(5)",
-    clx_utility = "(6)")
+    clx_utility = "(6)",
+    coxX_gravity = "(7)",
+    coxX_utility = "(8)") %>% 
+    add_footer_lines(c("Standard errors shown in parentheses; CL = Conditional logit; distance measured in miles"))
 ```
+
+We next verify that each framework and specification yield identical predicted choice probabilities, and these choice probabilties are centered around the "truth" from the underlying DGP:
 
 ```{r}
 #| code-fold: true
@@ -948,6 +1016,152 @@ foo %>%
     geom_point(alpha=0.2)
 
 ```
+
+# Adding Choice Frictions From Plan Networks
+
+In this section, we will augment the data generation process by conceptualizing more vs. restrictive plan networks as sources of friction on patient choices. Intuitively, a patient may otherwise value the proximity and quality of a hospital. However, if the hospital is out-of-network---requiring the patient to pay the full bill (HMO) or a substantially higher share of the bill (PPO)--- the hospital may as well be 1,000 miles away.
+
+We will conceptualize the above intutiion by adapting the distance function  in the denominator of @eq-gravity0.       
+
+Frictions enter a gravity model through the denominator term $t_{i h}$, which we rewrite as $t_{i h}=$ $D_{i h}^2 \exp \left(\alpha_4\left(1-NET_{ih}\right)\left(1-HMO_{p(i)}\right)+\alpha_5\left(1-NET_{ih}\right) HMO_{p(i)}\right)$, where $NET_{ih}$ is a binary indicator for whether hospital $h$ is NETwork for patient $i$, and $HMO_{p(i)}$ is a binary indicator for whether the patient is enrolled in an HMO plan,
+
+$$
+F_{i h}=G \frac{\widetilde{X_i}^{\alpha_1} \widetilde{Q_h}^{\alpha_2}}{\big ( D_{i h}^2 \exp \left(\alpha_4\left(1-NET_{ih}\right)\left(1-HMO_{p(i)}\right)+\alpha_5\left(1-NET_{ih}\right) HMO_{p(i)}\right) \big )^{-\alpha_3}}
+$$ {#eq-gravity}
+
+With the new specification for $t_{ih}$ in hand, we convert back to the (equivalent!) utility scale to obtain,
+
+$$
+\begin{eqnarray}
+u_{i h}&=&\alpha_0+\alpha_1 X_i+\alpha_2 Q_h+\alpha_3 \log \left(D_{i h}^2\right)+ \\ & &\alpha_3 \alpha_4\left(1-NET_{ih}\right)\left(1-HMO_{p(i)}\right)+ \\ && \alpha_3 \alpha_5\left(1-NET_{ih}\right) HMO_{p(i)}+v_{i h}
+\end{eqnarray}
+$$ {#eq-utility} 
+
+To estimate parameters in @eq-utility we will fit conditional logit models of the form:
+
+$$
+u_{i h}=\delta_h+\gamma_i + \beta_1 \log \left(D_{i h}^2\right)+\beta_2\left(1-NET_{i h}\right)\left(1-\mathrm{HMO}_{p(i)}\right)+\beta_3\left(1-\mathrm{NET}_{ih}\right) \mathrm{HMO}_{p(i)}+\epsilon_{\mathrm{ih}}
+$$ where $\delta_h$ are hospital fixed effects and $\gamma_i$ are patient fixed effects. 
+
+```{r}
+set.seed(623)
+df_utility_net <- 
+    simulate_dgp(params, has_network = TRUE, framework = "random_utility")
+
+df_cl_utility_net <- 
+    df_utility_net %>% 
+    select(patient_id, hosp_id, selected, d_gh, q_h, hmo, not_in_network) %>% 
+    dfidx(.)
+
+fit_cl_utility_net = 
+    mlogit(selected ~ log(d_gh^2) + I(not_in_network*hmo) + I(not_in_network * (1-hmo)), data =df_cl_utility_net)
+```
+
+```{r}
+#| code-fold: true
+#| code-summary: Table code
+
+fit_cl_utility_net %>% tidy() %>% 
+    filter(!grepl("Intercept",term)) %>% 
+    mutate_at(vars(estimate,std.error,statistic,p.value),~round(.,3)) %>% 
+    mutate(p.value = ifelse(p.value<.001,"<0.001",ifelse(p.value<.01,"<0.01",paste0(round(p.value,3))))) %>% 
+    flextable() %>% 
+    flextable::add_footer_lines("Note: Coefficients on hospital fixed effects suppressed from table.")
+```
+
+## Parameters of Interest
+
+Choice model parameters of interest include the frictional force of out-of-network status for HMO and non-HMO plans (i.e., $\alpha_4$ and $\alpha_5$), and can be estimated by,
+
+$$
+\alpha_4 = \frac{\hat \beta_2}{\hat \beta_1}
+$$ {#eq-alpha4}
+$$
+\alpha_5 = \frac{\hat \beta_3}{\hat \beta_1}
+$$ {#eq-alpha5}
+
+The terms $\exp(\alpha_3 \alpha_4)$ and $\exp(\alpha_3 \alpha_5)$, as estimated by $\exp(\beta_2)$ and $\exp(\beta_3)$ are also of interest, as these terms capture the reduction in force from a hospital/physician being out of network in an HMO and non-HMO plan, respectively. These parameters directly impact choice probabilities—though the exact magnitude for a given patient depends on their choice set and the breadth of the network within this choice set. 
+
+We can see how these frictions play out by looking at the predicted choice probabilities under specifications that do and do not include network-level attributes.  @tbl-predict, for example, shows that the closest two hosptials to Patient 8 are out of her plan's network. Under a conditional logit model that does not include network attributes, the probability of selecting these hospitals is quite high. However, because the plan network exerts frictions on choices (@eq-gravity), we see that the "true" choice probability is much lower; she is much more likely to select the third-closest hospital.
+
+We see in the final column that when network frictions are accounted for, the predicted choice probabilities are much closer to the "truth" from the underlying DGP. 
+
+```{r}
+#| code-fold: true
+#| code-summary: Model Predictions With and Without Network Frictions
+#| tbl-cap: Comparison of Predicted Choice Probabilties 
+#| label: tbl-predict
+
+fit_cl_utility_net0 <- 
+    clogit(selected ~ factor(hosp_id) + log(d_gh^2) + strata(patient_id), 
+           data = df_utility_net,
+           method=c("efron"), 
+           robust = TRUE)
+
+fit_cl_utility_net1 <- 
+    clogit(selected ~ factor(hosp_id) + log(d_gh^2) + I(not_in_network*hmo) + 
+               I(not_in_network * (1-hmo)) + strata(patient_id), 
+           data = df_utility_net,
+           method=c("efron"), 
+           robust = TRUE)
+
+df_res_net <- 
+    df_utility_net %>% select(patient_id,hosp_id,d_gh,not_in_network,hmo,truth) %>% 
+    mutate(not_in_network = 1 - not_in_network) %>% 
+    rename(in_network = not_in_network)
+df_res_net$cl_utility0 <- predict(fit_cl_utility_net0,type="expected",newdata = df_utility_net)
+df_res_net$cl_utility1 <- predict(fit_cl_utility_net1,type="expected",newdata = df_utility_net)
+
+df_res_net %>% filter(d_gh<10) %>% arrange(patient_id,d_gh) %>% filter(patient_id==8) %>% 
+    mutate_at(vars(starts_with("cl_"),d_gh),~round(.,3)) %>% 
+    flextable(col_keys = c("patient_id","hosp_id","tmp1","d_gh","in_network","hmo","tmp2","truth","tmp3","cl_utility0","cl_utility1")) %>% 
+    theme_vanilla() %>% 
+    empty_blanks() %>% 
+    add_header_row(
+        values = c("Choice Situation","","Patient Attributes","","","Predicted"), colwidths = c(2,1,4,1,1,2)
+    ) %>% 
+     set_header_labels(
+      truth = "Truth",
+      cl_utility0 = "No Network Frictions",
+      cl_utility1 = "Network Frictions"
+     )
+```
+
+We can also use the fitted models to consider counterfactuals. In @tbl-predict, the patient's plan was a less restrictive PPO (i.e., the value for `hmo` is zero). Suppose we counterfactually place her in a more restrictive HMO plan. How does this change the choice probabilities?
+
+@tbl-hmo shows that when network frictions are included, the probability of selecting the closer (out-of-network) facilities reduces further, to nearly zero. Conceptually, the conditional logit model is allowing for more restrictive HMO plans to exert a greater force of friction on choices. 
+
+```{r}
+#| code-fold: true
+#| code-summary: Predictions under HMO plan
+#| tbl-cap: Comparison of Predicted Choice Probabilties Under a Restrictive HMO Plan
+#| label: tbl-hmo
+#| 
+df_res_net <- 
+    df_utility_net %>% select(patient_id,hosp_id,d_gh,not_in_network,hmo,truth) %>% 
+    mutate(hmo = 1) %>% 
+    mutate(not_in_network = 1 - not_in_network) %>% 
+    rename(in_network = not_in_network)
+df_res_net$cl_utility0 <- predict(fit_cl_utility_net0,type="expected",newdata = df_utility_net %>% mutate(hmo=1))
+df_res_net$cl_utility1 <- predict(fit_cl_utility_net1,type="expected",newdata = df_utility_net %>% mutate(hmo=1))
+
+df_res_net %>% filter(d_gh<10) %>% arrange(patient_id,d_gh) %>% filter(patient_id==8) %>% 
+    mutate_at(vars(starts_with("cl_"),d_gh),~round(.,3)) %>% 
+    flextable(col_keys = c("patient_id","hosp_id","tmp1","d_gh","in_network","hmo","tmp2","truth","tmp3","cl_utility0","cl_utility1")) %>% 
+    theme_vanilla() %>% 
+    empty_blanks() %>% 
+    add_header_row(
+        values = c("Choice Situation","","Patient Attributes","","","Predicted"), colwidths = c(2,1,4,1,1,2)
+    ) %>% 
+     set_header_labels(
+      truth = "Truth",         
+      cl_utility0 = "No Network Frictions",
+      cl_utility1 = "Network Frictions"
+     )
+
+
+```
+
 
 # References
 
