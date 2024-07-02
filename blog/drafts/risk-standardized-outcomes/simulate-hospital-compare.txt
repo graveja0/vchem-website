@@ -1,0 +1,241 @@
+# This file simulates hospital level data to test the standard hospital compare 
+# risk standardized model vs. a model with hospital-level shrinkage targets (e.g., volume)
+# It is based on a Bayesian hierarchical model fit using a Hamiltonian Monte Carlo Sampler
+
+rm(list=ls())
+library(rstan)
+library(Hmisc)
+library(rms)
+library(foreign)
+
+###########################
+# Data Generation Process
+###########################
+# Outcome for patient j treated in hospital i
+#     Y_ij = logit( beta0_i + alpha * xx[j,])
+#   where xx is a matrix of patient-level risk-adjusters.
+#
+# Hospital intercept has it's own (linear) model that depends on hospital characteristics (e.g., volume)
+#     beta0_i ~ N( mu + gamma * zz[i,], tau)
+#   where zz is a matrix of hospital-level characteristics. 
+#
+# Note that the standard hosptial compare model simply assumes:
+#     beta0_i ~ N(mu, tau)
+#
+#
+
+####################
+# Define Parameters
+###################
+mu = -2
+tau = .2
+gamma = c(3,.25)
+alpha = c(1,0.25,3)
+
+inv_logit = function(u) return(exp(u)/(1+exp(u)))
+
+###############################
+# Simulate Hospital Mortality
+###############################
+set.seed(1245)
+I = 200                      # Number of hospitals
+n_i = rnbinom(I,size=1,mu=250)  # Number of Patients in Hospital i
+n_i[which(n_i==0)] = 100
+(J = sum(n_i))                  # Total Number of Patients 
+H = rep(1:I,n_i)                # Hospital for Patient j
+
+# Matrix of Hospital Characteristics
+Z = matrix(rnorm(I*length(gamma)),nrow=I,ncol=length(gamma))
+
+# Hospital Intercept
+beta0 = rep(NA,I)
+#for (i in 1:I) beta0[i] = rnorm(1,mean= mu + Z[i,]%*% gamma,sd=tau); hist(beta0)
+for (i in 1:I) beta0[i] = rnorm(1,mean= mu ,sd=tau); hist(beta0)
+
+# Matrix of Individual Characteristics
+xx = matrix(rnorm(J*length(alpha)),nrow=J,ncol=length(alpha))
+K = dim(xx)[2]
+
+# Outcome
+Y = rep(NA,J)
+for (j in 1:J) Y[j] = rbinom(1,1,inv_logit(beta0[H[j]] + xx[j,] %*% alpha))
+mean(Y)
+
+# Hospital Compare Stan Model 
+
+hospital.compare  ='
+  data {
+    int<lower=0> J; 
+    int<lower=0> K; 
+    int<lower=0> I ;
+    int<lower=0> H[J];
+    matrix[J,K] xx; 
+    int<lower=0,upper=1> Y[J];
+  }
+  parameters {
+    vector[K] alpha; 
+    vector[I] eta;
+    real mu;
+    real<lower=0> tau;
+  }
+  transformed parameters {
+    vector[I] beta0;
+    beta0 <- mu + tau*eta;
+  }
+  model {
+    alpha ~ normal(0,100);
+    mu ~ normal(0,100);
+    eta ~ normal(0,1);
+    for (n in 1:J)
+    Y[n] ~ bernoulli_logit( beta0[H[n]] + xx[n]*alpha )  ;
+  }
+'
+###################################
+# Fit the Hierarchical Models
+###################################
+# Standard Hospital Compare Model
+dat = list(J=J,K=K,I=I,H=H,xx=xx,Y=Y)
+hc.fit = stan(model_code=hospital.compare,data=dat,chains=2,iter=1000)
+hc = extract(hc.fit,permute=TRUE)
+
+######################################
+# Create the Risk Standardized Measure
+#######################################
+(mu.hat = mean(hc$mu))
+(beta0.hat = apply(hc$beta0,2,mean))
+(alpha.hat = apply(hc$alpha,2,mean))
+predicted.j = expected.j = rep(NA,J)
+for (n in 1:J) {
+  predicted.j[n] = inv_logit(beta0.hat[H[n]] +  xx[n,]%*% alpha.hat )
+  expected.j[n] = inv_logit(mu.hat + xx[n,] %*% alpha.hat)
+}
+
+(Ybar = mean(Y))
+(Predicted = aggregate(predicted.j,by=list(H),sum)$x)
+(Expected = aggregate(expected.j,by=list(H),sum)$x)
+PE = Predicted/Expected
+
+RSMR = Ybar*(Predicted/Expected)
+#(RSMR = log(Ybar) + log((Predicted/Expected)))
+hist(RSMR); mean(RSMR)
+head(Ybar)
+
+
+hospital.compare.Z  ='
+  data {
+    int<lower=0> J; // Total observations
+    int<lower=0> K; // Number of covariates
+    int<lower=0> I ; // Number of Hospitals
+    int<lower=0> H[J]; // Hospital Identifier
+    int<lower=0> Z; // Number of Hospital Characteristics
+    matrix[J,K] xx;  // matrix of indivdiual-level covariates
+    matrix[I,Z] zz; // matrix of hospital-level covariates
+    int<lower=0,upper=1> Y[J]; // Outcome
+  }
+  parameters {
+    vector[K] alpha;  // Regresison coefficients for indivdiual-level data
+    vector[Z] gamma; // Regression coefficients for hospital-level data
+    vector[I] beta0; // Hospital Random Effects
+    real mu; // Hospital Random Effect Mean
+    real<lower=0> tau; // Variance of hospital random effect
+  }
+
+  model {
+    alpha ~ normal(0,1000);
+    gamma ~ normal(0,1000);
+    mu ~ normal(0,1000);
+    tau ~ normal(0,1000);
+    for (i in 1:I) 
+    beta0[i] ~ normal(mu + zz[i]*gamma , tau);
+    
+    for (n in 1:J)
+    Y[n] ~ bernoulli_logit( beta0[H[n]] + xx[n]*alpha )  ;
+  }
+'
+
+# Allow For Hopsital Random Effect to Depend on a Hospital Characteristic
+dat = list(J=J,K=K,I=I,H=H,Z=dim(Z)[2],xx=xx,zz=Z,Y=Y)
+hc.fit.Z = stan(model_code=hospital.compare.Z,data=dat,chains=2,iter=1000)
+hc.Z = extract(hc.fit.Z)
+
+# Extract the Various Parts
+print(hc.fit.Z)
+alpha.h = apply(hc.Z$alpha,2,mean)
+beta0.h = apply(hc.Z$beta0,2,mean)
+gamma.h = apply(hc.Z$gamma,2,mean)
+(mu.h = mean(hc.Z$mu))
+(tau.h = mean(hc.Z$tau))
+
+numerator = rep(J)
+for (j in 1:J) {
+  
+}
+
+
+
+
+
+#################################
+# Find the Hospital Fixed Effect
+#################################
+
+model = hc
+mu.h = mean(model$beta0)
+alpha.h = apply(model$alpha,2,mean)
+
+# Estimate the Average Fixed Effect
+
+extract.fe = function(alpha=alpha.h) {
+  b0range = seq(-50,50,0.02)
+  xx.alpha = rep(NA,J)
+  for (n in 1:J) xx.alpha[n] = xx[n,]%*%alpha
+  gEDi = inv_logit(matrix(rep(xx.alpha,length(b0range)),nrow=J,ncol=length(b0range))+matrix(sort(rep(b0range,J)),nrow=J,ncol=length(b0range)))
+  Y_i = aggregate(Y,by=list(H),sum)$x
+  gEDi.diff = apply(gEDi,2,function(x) abs(Y_i - aggregate(x,by=list(H),sum)$x))
+  beta0.fe = apply(gEDi.diff,1,function(x) b0range[which(x==min(x))][1])
+  return(beta0.fe)
+}
+library(ggplot2)
+fe.mean = extract.fe()
+(beta0.hat = apply(hc$beta0,2,mean))
+temp = cbind.data.frame(fe=fe.mean,re=beta0.hat,x=rnorm(length(fe.mean)),quartile=cut(abs(n_i), 
+                        breaks=quantile(n_i,seq(0,1,0.2),include.lowest=TRUE)))
+ggplot(data=temp,aes(x=re))+geom_density(aes(group=quartile,colour=quartile))+geom_density(aes(x=fe),colour="black")
+
+
+
+######################################
+# Create the Risk Standardized Measure
+#######################################
+(mu.hat = mean(hc$mu))
+(beta0.hat = apply(hc$beta0,2,mean))
+(alpha.hat = apply(hc$alpha,2,mean))
+
+mu.hat.Z = mean(hc.Z$mu)
+(beta0.hat.Z = apply(hc.Z$beta0,2,mean))
+(alpha.hat.Z = apply(hc.Z$alpha,2,mean))
+
+predicted.j = expected.j = rep(NA,J)
+predicted.Z.j = expected.Z.j = rep(NA,J)
+for (n in 1:J) {
+  predicted.j[n] = inv_logit(beta0.hat[H[n]] +  xx[n,]%*% alpha.hat )
+  expected.j[n] = inv_logit(mu.hat + xx[n,] %*% alpha.hat)
+  #predicted.Z.j[n] = inv_logit(beta0.hat.Z[H[n]] +  xx[n,]%*% alpha.hat.Z )
+  #expected.Z.j[n] = inv_logit(mu.hat.Z + xx[n,] %*% alpha.hat.Z)  
+}
+
+(Ybar = mean(Y))
+(Predicted = aggregate(predicted.j,by=list(H),sum)$x)
+(Expected = aggregate(expected.j,by=list(H),sum)$x)
+
+(Predicted.Z = aggregate(predicted.Z.j,by=list(H),sum)$x)
+(Expected.Z = aggregate(expected.Z.j,by=list(H),sum)$x)
+
+PE = Predicted/Expected
+
+RSMR = (Predicted/Expected)
+(RSMR = log(Ybar) + log((Predicted/Expected)))
+hist(RSMR)
+
+(RSMR.Z = Ybar * (Predicted.Z/Expected.Z))
+hist(RSMR.Z)
